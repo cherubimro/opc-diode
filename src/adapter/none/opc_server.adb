@@ -18,6 +18,12 @@ package body Opc_Server with SPARK_Mode => Off is
       Ok := False;
    end Start;
 
+   procedure Add_Node (Node_Id : String; Ok : out Boolean) is
+      pragma Unreferenced (Node_Id);
+   begin
+      Ok := False;
+   end Add_Node;
+
    procedure Write
      (Node_Id   : String;
       Value     : Val_Bytes;

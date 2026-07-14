@@ -33,6 +33,12 @@ package body Opc_Server with SPARK_Mode => Off is
       Ok := C_Start (To_C (Server_Cfg), To_C (Addr_Space_Cfg)) = 0;
    end Start;
 
+   procedure Add_Node (Node_Id : String; Ok : out Boolean) is
+      pragma Unreferenced (Node_Id);
+   begin
+      Ok := True;   --  S2OPC nodes are defined in the address-space XML
+   end Add_Node;
+
    procedure Write
      (Node_Id   : String;
       Value     : Val_Bytes;

@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <pthread.h>
+#include <time.h>
 #include "open62541.h"
 
 static UA_Server*  g_server;
@@ -21,10 +22,17 @@ static pthread_t   g_thread;
 static volatile UA_Boolean g_run;
 static int g_ready;
 
+/* Own the whole server lifecycle on this one thread -- startup, the iterate
+   loop, and shutdown.  Calling run_startup here AND in the caller left the
+   listener half-open, so connections timed out. */
 static void* serve(void* arg)
 {
     (void) arg;
-    UA_Server_run(g_server, &g_run);   /* blocks until g_run = false */
+    UA_Server_run_startup(g_server);
+    while (g_run) {
+        UA_Server_run_iterate(g_server, true);
+    }
+    UA_Server_run_shutdown(g_server);
     return NULL;
 }
 
@@ -36,10 +44,40 @@ int od_ua_srv_start(const char* server_cfg, const char* addr_space_cfg)
     if (g_server == NULL) return -1;
     UA_ServerConfig_setDefault(UA_Server_getConfig(g_server));
     g_run = true;
-    if (UA_Server_run_startup(g_server) != UA_STATUSCODE_GOOD) return -1;
     if (pthread_create(&g_thread, NULL, serve, NULL) != 0) return -1;
+
+    /* Let startup bind the listener before Add_Node/Write or a client arrive
+       (multithreading is on, so those calls are then thread-safe). */
+    struct timespec ts = { 0, 400L * 1000L * 1000L };
+    nanosleep(&ts, NULL);
     g_ready = 1;
     return 0;
+}
+
+/* Create a writable Double variable node (parented under Objects). */
+int od_ua_srv_add_node(const char* node)
+{
+    if (!g_ready || node == NULL) return -1;
+    UA_NodeId nid;
+    if (UA_NodeId_parse(&nid, UA_STRING((char*) node)) != UA_STATUSCODE_GOOD)
+        return -1;
+
+    UA_VariableAttributes attr = UA_VariableAttributes_default;
+    UA_Double zero = 0.0;
+    UA_Variant_setScalar(&attr.value, &zero, &UA_TYPES[UA_TYPES_DOUBLE]);
+    attr.accessLevel = UA_ACCESSLEVELMASK_READ | UA_ACCESSLEVELMASK_WRITE;
+
+    UA_QualifiedName bn = UA_QUALIFIEDNAME(1, (char*) node);
+    UA_StatusCode st = UA_Server_addVariableNode(
+        g_server, nid,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES),
+        bn, UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
+        attr, NULL, NULL);
+    UA_NodeId_clear(&nid);
+    /* AlreadyExists is fine (node came from a nodeset). */
+    return (st == UA_STATUSCODE_GOOD ||
+            st == UA_STATUSCODE_BADNODEIDEXISTS) ? 0 : -1;
 }
 
 int od_ua_srv_write(const char* node, const uint8_t* val, int len)

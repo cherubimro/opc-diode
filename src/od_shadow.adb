@@ -94,6 +94,9 @@ begin
                   Map (N_Map).Node (1 .. L) := Nd (Nd'First .. Nd'First + L - 1);
                   Map (N_Map).NLen := L;
                   Map (N_Map).Used := True;
+                  declare Ao : Boolean; begin
+                     Opc_Server.Add_Node (Nd, Ao);
+                  end;
                   A := A + 2;
                end;
             end if;

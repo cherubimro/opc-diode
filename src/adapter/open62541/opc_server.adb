@@ -19,6 +19,9 @@ package body Opc_Server with SPARK_Mode => Off is
                      Len : Interfaces.C.int) return Interfaces.C.int
      with Import, Convention => C, External_Name => "od_ua_srv_write";
 
+   function C_Add (Node : char_array) return Interfaces.C.int
+     with Import, Convention => C, External_Name => "od_ua_srv_add_node";
+
    procedure C_Stop
      with Import, Convention => C, External_Name => "od_ua_srv_stop";
 
@@ -32,6 +35,11 @@ package body Opc_Server with SPARK_Mode => Off is
    begin
       Ok := C_Start (To_C (Server_Cfg), To_C (Addr_Space_Cfg)) = 0;
    end Start;
+
+   procedure Add_Node (Node_Id : String; Ok : out Boolean) is
+   begin
+      Ok := C_Add (To_C (Node_Id)) = 0;
+   end Add_Node;
 
    procedure Write
      (Node_Id   : String;

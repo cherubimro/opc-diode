@@ -27,6 +27,10 @@ package Opc_Server with SPARK_Mode => Off is
       Addr_Space_Cfg : String;
       Ok             : out Boolean);
 
+   --  Ensure a writable variable node exists (created programmatically on
+   --  open62541; a no-op on S2OPC, whose nodes come from the address-space XML).
+   procedure Add_Node (Node_Id : String; Ok : out Boolean);
+
    --  Write one recovered value to the node Node_Id.  Value (1 .. Value_Len) is
    --  the encoded SOPC_DataValue that arrived as the DataSetMessage payload.
    procedure Write
