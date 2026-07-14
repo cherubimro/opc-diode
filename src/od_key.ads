@@ -1,5 +1,5 @@
 --  SPDX-License-Identifier: AGPL-3.0-or-later
---  Copyright (C) 2026 Alin Anton
+--  Copyright (C) 2026  Alin-Adrian Anton <alin.anton@upt.ro>
 --
 --  Od_Key -- key material handling for the trusted shell (not proven).
 --

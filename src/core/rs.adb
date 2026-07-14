@@ -1,5 +1,5 @@
 --  SPDX-License-Identifier: AGPL-3.0-or-later
---  Copyright (C) 2026 Alin Anton
+--  Copyright (C) 2026  Alin-Adrian Anton <alin.anton@upt.ro>
 --
 --  Reed-Solomon erasure code body.  Everything here is bounded: the matrices
 --  are at most Max_K x 2*Max_K (72 x 144) bytes, every loop is bounded by K, M or

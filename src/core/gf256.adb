@@ -1,5 +1,5 @@
 --  SPDX-License-Identifier: AGPL-3.0-or-later
---  Copyright (C) 2026 Alin Anton
+--  Copyright (C) 2026  Alin-Adrian Anton <alin.anton@upt.ro>
 --
 --  GF(2^8) arithmetic over the primitive polynomial 0x11D
 --  (x^8 + x^4 + x^3 + x^2 + 1) -- the standard choice for Reed-Solomon.

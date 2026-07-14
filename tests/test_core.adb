@@ -1,5 +1,5 @@
 --  SPDX-License-Identifier: AGPL-3.0-or-later
---  Copyright (C) 2026 Alin Anton
+--  Copyright (C) 2026  Alin-Adrian Anton <alin.anton@upt.ro>
 --
 --  Sanity driver for the proven core.  This is behaviour testing, NOT proof:
 --  gnatprove establishes absence of run-time errors, and these checks confirm

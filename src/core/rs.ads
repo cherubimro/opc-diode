@@ -1,5 +1,5 @@
 --  SPDX-License-Identifier: AGPL-3.0-or-later
---  Copyright (C) 2026 Alin Anton
+--  Copyright (C) 2026  Alin-Adrian Anton <alin.anton@upt.ro>
 --
 --  Rs -- a systematic Reed-Solomon ERASURE code over GF(2^8).
 --

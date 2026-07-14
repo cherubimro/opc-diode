@@ -1,5 +1,5 @@
 --  opc-diode -- a high-assurance Ada/SPARK OPC UA PubSub data-diode relay.
---  Copyright (C) 2026  Alin Anton <alin.anton@upt.ro>
+--  Copyright (C) 2026  Alin-Adrian Anton <alin.anton@upt.ro>
 --  SPDX-License-Identifier: AGPL-3.0-or-later
 --
 --  Od_Dpdk -- optional DPDK poll-mode transport (kernel bypass).

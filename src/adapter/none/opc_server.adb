@@ -1,5 +1,5 @@
 --  opc-diode -- a high-assurance Ada/SPARK OPC UA PubSub data-diode relay.
---  Copyright (C) 2026  Alin Anton <alin.anton@upt.ro>
+--  Copyright (C) 2026  Alin-Adrian Anton <alin.anton@upt.ro>
 --  SPDX-License-Identifier: AGPL-3.0-or-later
 --
 --  Opc_Server -- STUB body (WITH_OPCUA=none): no server stack.

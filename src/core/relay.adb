@@ -1,5 +1,5 @@
 --  SPDX-License-Identifier: AGPL-3.0-or-later
---  Copyright (C) 2026 Alin Anton
+--  Copyright (C) 2026  Alin-Adrian Anton <alin.anton@upt.ro>
 --
 --  Relay core body.  Everything is bounded and allocation-free.  Fragment
 --  geometry is chosen so its bounds are structural, not arithmetic: the chunk

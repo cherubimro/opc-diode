@@ -1,5 +1,5 @@
 //  opc-diode -- a high-assurance Ada/SPARK OPC UA PubSub data-diode relay.
-//  Copyright (C) 2026  Alin Anton <alin.anton@upt.ro>
+//  Copyright (C) 2026  Alin-Adrian Anton <alin.anton@upt.ro>
 //  SPDX-License-Identifier: AGPL-3.0-or-later
 
 /*  opc_server_shim.c -- open62541 shadow server behind the Ada Opc_Server

@@ -1,5 +1,5 @@
 --  SPDX-License-Identifier: AGPL-3.0-or-later
---  Copyright (C) 2026 Alin Anton
+--  Copyright (C) 2026  Alin-Adrian Anton <alin.anton@upt.ro>
 --
 --  Diode framing body.  Fixed offsets, little-endian scalars.  Serialize writes
 --  known-in-range indices (the preconditions bound K, M, Frag_Idx, Frag_Len).

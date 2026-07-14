@@ -1,5 +1,5 @@
 --  SPDX-License-Identifier: AGPL-3.0-or-later
---  Copyright (C) 2026 Alin Anton
+--  Copyright (C) 2026  Alin-Adrian Anton <alin.anton@upt.ro>
 --
 --  UADP header parser body.  A bounded cursor walks the buffer; every read is
 --  guarded by "cursor + size <= Len" and refuses (setting Ok => False) rather
