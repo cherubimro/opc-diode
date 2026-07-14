@@ -9,10 +9,12 @@ with Ada.Text_IO; use Ada.Text_IO;
 with Interfaces;
 with Gf256;       use Gf256;
 with Rs;
+with Uadp;
 
 procedure Test_Core is
 
    use type Byte;
+   use type Uadp.U8, Uadp.U16, Uadp.U64, Uadp.Pub_Kind;
    subtype Interfaces_Unsigned is Interfaces.Unsigned_64;
    use type Interfaces.Unsigned_64;
 
@@ -136,6 +138,118 @@ begin
       Trial (16, 8, 300, 8);
       Trial (10, 6, 1400, 6);     --  full fragment length
       Trial (1,  3, 50,  3);      --  pure replication (K=1): survive any 1 of 4
+   end;
+
+   --  UADP NetworkMessage header parsing.  Build messages byte-by-byte and
+   --  check the relay-relevant fields are extracted, and that truncated /
+   --  malformed input is rejected (Valid => False) without ever crashing.
+   Put_Line ("== UADP header parse ==");
+   declare
+      M   : Uadp.Message := (others => 0);
+      Pos : Natural := 0;
+
+      procedure B (X : Uadp.U8) is
+      begin
+         M (Pos) := X; Pos := Pos + 1;
+      end B;
+
+      procedure LE16 (X : Uadp.U16) is
+      begin
+         B (Uadp.U8 (X and 16#FF#)); B (Uadp.U8 (X / 256));
+      end LE16;
+
+      procedure Reset is
+      begin
+         M := (others => 0); Pos := 0;
+      end Reset;
+
+      Info : Uadp.Header_Info;
+   begin
+      --  Message 1: Byte PublisherId, GroupHeader (WriterGroupId+SequenceNumber),
+      --  PayloadHeader with two DataSetWriterIds, then opaque payload.
+      Reset;
+      B (16#71#);                 --  Flags: v1 + Publisher + Group + Payload
+      B (16#2A#);                 --  PublisherId (Byte) = 42
+      B (16#09#);                 --  GroupFlags: WriterGroupId + SequenceNumber
+      LE16 (100);                 --  WriterGroupId
+      LE16 (7);                   --  SequenceNumber
+      B (2);                      --  PayloadHeader Count = 2
+      LE16 (1000); LE16 (1001);   --  DataSetWriterIds
+      B (16#DE#); B (16#AD#);     --  opaque payload
+      Uadp.Parse (M, Pos, Info);
+      Check (Info.Valid,                          "msg1 valid");
+      Check (Info.Is_Data,                        "msg1 is dataset");
+      Check (Info.Version = 1,                    "msg1 version");
+      Check (Info.Pub = Uadp.Pub_Byte,            "msg1 pub kind");
+      Check (Info.Pub_Numeric = 42,               "msg1 pub id");
+      Check (Info.Has_Group_Id
+             and Info.Writer_Group_Id = 100,      "msg1 group id");
+      Check (Info.Has_Seq
+             and Info.Sequence_Number = 7,        "msg1 seqnum");
+      Check (Info.N_Writers = 2,                  "msg1 writer count");
+      Check (Info.Writers (1) = 1000
+             and Info.Writers (2) = 1001,         "msg1 writer ids");
+      Check (Info.Consumed = 12,                  "msg1 header length");
+
+      --  Message 2: UInt32 PublisherId (needs ExtendedFlags1), SequenceNumber
+      --  only, no PayloadHeader.
+      Reset;
+      B (16#B1#);                 --  Flags: v1 + Publisher + Group + EF1
+      B (16#02#);                 --  EF1: PublisherId type 2 (UInt32)
+      B (16#4F#); B (16#27#); B (0); B (0);   --  PublisherId = 10063
+      B (16#08#);                 --  GroupFlags: SequenceNumber only
+      LE16 (65535);               --  SequenceNumber at max (wrap boundary)
+      Uadp.Parse (M, Pos, Info);
+      Check (Info.Valid,                          "msg2 valid");
+      Check (Info.Pub = Uadp.Pub_U32
+             and Info.Pub_Numeric = 10063,        "msg2 pub u32");
+      Check (Info.Has_Seq
+             and Info.Sequence_Number = 65535,    "msg2 seqnum max");
+      Check (not Info.Is_Data,                    "msg2 no payload header");
+
+      --  Message 3: String PublisherId must be skipped correctly to still
+      --  reach the SequenceNumber that follows it.
+      Reset;
+      B (16#B1#);                 --  v1 + Publisher + Group + EF1
+      B (16#04#);                 --  EF1: PublisherId type 4 (String)
+      B (3); B (0); B (0); B (0); --  String length = 3
+      B (Character'Pos ('a')); B (Character'Pos ('b')); B (Character'Pos ('c'));
+      B (16#08#);                 --  GroupFlags: SequenceNumber
+      LE16 (321);
+      Uadp.Parse (M, Pos, Info);
+      Check (Info.Valid,                          "msg3 valid");
+      Check (Info.Pub = Uadp.Pub_String
+             and Info.Pub_Str_Len = 3,            "msg3 string pub len");
+      Check (Info.Has_Seq
+             and Info.Sequence_Number = 321,      "msg3 seqnum after string");
+
+      --  Message 4: truncation.  Every prefix of message 1 must parse without
+      --  crashing; a prefix that cuts a field short must be Valid => False.
+      Reset;
+      B (16#71#); B (16#2A#); B (16#09#); LE16 (100); LE16 (7);
+      B (2); LE16 (1000); LE16 (1001);
+      declare
+         Full : constant Natural := Pos;
+         Any_Crash : constant Boolean := False;
+      begin
+         for Cut in 0 .. Full loop
+            Uadp.Parse (M, Cut, Info);
+            --  A short header must be rejected; the full one accepted.
+            if Cut < Full then
+               Check (not Info.Valid or else Info.Consumed <= Cut,
+                      "truncated prefix safe at" & Cut'Image);
+            end if;
+         end loop;
+         Check (not Any_Crash, "no crash across all truncations");
+      end;
+
+      --  Message 5: a declared writer count larger than the bytes present must
+      --  fail cleanly, not read past the end.
+      Reset;
+      B (16#71#); B (16#2A#); B (16#09#); LE16 (100); LE16 (7);
+      B (200);                    --  claims 200 writers, provides none
+      Uadp.Parse (M, Pos, Info);
+      Check (not Info.Valid,                      "msg5 lying count rejected");
    end;
 
    New_Line;

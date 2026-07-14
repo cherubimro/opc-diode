@@ -4,10 +4,11 @@
 [opcua-data-diode](https://github.com/cherubimro/opcua-data-diode), aimed at *formal proof* of the
 reconstruction path rather than parity with the Python original.
 
-> Status: **Phase 0+1 complete.** The proven core — GF(2⁸) field arithmetic and a systematic
-> Reed-Solomon erasure code — is proved free of run-time errors by `gnatprove`: **112 checks, 0
-> unproved, 0 justified**, with a byte-exact erasure round-trip test. The relay itself (UADP header
-> parse, dedup, interleaving, transport) is the next phase.
+> Status: **Phases 0–2 complete.** The proven core — GF(2⁸) arithmetic, a systematic Reed-Solomon
+> erasure code, and a UADP NetworkMessage **header parser** — is proved free of run-time errors by
+> `gnatprove`: **180 checks, 0 unproved, 0 justified**, with a byte-exact erasure round-trip and a
+> header-parse test (including truncation and lying length fields). The relay itself (dedup,
+> interleaving, transport) is the next phase.
 
 ## Why this design, and how it differs from the Python original
 
@@ -50,6 +51,7 @@ Reed-Solomon owns the middle rung and is what Phase 0+1 delivers.
 | `gf256` | GF(2⁸) arithmetic, primitive polynomial `0x11D`. Frozen log/antilog tables; the doubled antilog makes `Mul`'s index provably in-range with no check |
 | `rs_matrix` | The frozen Cauchy generator matrix — every square submatrix invertible, which is *why* the code is MDS |
 | `rs` | Systematic RS: `Encode` (Cauchy matrix-vector) and `Decode` (Gauss-Jordan inversion over GF(2⁸)). `Decode` fails only if fewer than K fragments survive |
+| `uadp` | Proven parser of the UADP NetworkMessage header (Part 14 §7.2.4, Part 6 little-endian). A bounded cursor extracts the `SequenceNumber` (dedup) and PublisherId / WriterGroupId / DataSetWriterIds (routing); a truncated or malformed message yields `Valid => False`, never an out-of-bounds read. Payloads are left opaque |
 
 ## Build, test, prove
 
@@ -64,8 +66,8 @@ Toolchain: **GNAT 14.2.0 + gprbuild + gnatprove** (SPARK). `tools/env.sh` puts t
 ## Roadmap
 
 - **Phase 0+1 — proven core** ✅ GF(2⁸) + Reed-Solomon, AoRTE-proved, round-trip tested.
-- **Phase 2 — UADP framing** proven parse of the NetworkMessage/GroupHeader; `SequenceNumber` and id
-  extraction; opaque-payload passthrough.
+- **Phase 2 — UADP header parse** ✅ proven parse of the NetworkMessage/GroupHeader/PayloadHeader;
+  `SequenceNumber` + routing-id extraction; opaque-payload passthrough; safe on truncated/hostile input.
 - **Phase 3 — the relay** sender (listen to PubSub, dedup, interleave, FEC, forward) and receiver
   (FEC-decode, dedup, re-emit UADP), with the trusted transport shell (UDP; optionally the DPDK
   bypass and LT transport from gnat-lt-pro).
