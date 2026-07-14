@@ -4,12 +4,12 @@
 [opcua-data-diode](https://github.com/cherubimro/opcua-data-diode), aimed at *formal proof* of the
 reconstruction path rather than parity with the Python original.
 
-> Status: **Phase 4 complete — a working, proven, ENCRYPTED relay.** The proven core (GF(2⁸),
-> Reed-Solomon, UADP header parse, diode framing, protect + erasure-recover + dedup, and the
-> ChaCha20-Poly1305 AEAD wrapper) is AoRTE-clean: **351 checks, 0 unproved, 0 justified** (SPARKNaCl
+> Status: **Phases 0–5 complete — a working, proven, encrypted relay with a written assurance case.**
+> The proven core (GF(2⁸), Reed-Solomon, UADP header parse, diode framing, protect + erasure-recover +
+> dedup, ChaCha20-Poly1305 AEAD) is AoRTE-clean: **351 checks, 0 unproved, 0 justified** (SPARKNaCl
 > provides the crypto, separately proven). The trusted UDP shell moves real NetworkMessages
-> end-to-end byte-identical, in the clear or authenticated-encrypted; a wrong key or any tampering is
-> rejected, never emitted (`tools/loopback-test.sh`).
+> end-to-end byte-identical, cleartext or authenticated-encrypted; a wrong key or any tampering is
+> dropped, never emitted. The full assurance case is [`docs/ASSURANCE.md`](docs/ASSURANCE.md).
 
 ## Why this design, and how it differs from the Python original
 
@@ -44,6 +44,10 @@ Two deliberate departures from the Python version, both about *not corrupting a 
 | **bulk** (structure dumps) | **LT fountain** (reuse gnat-lt-pro) | efficient only at large K |
 
 Reed-Solomon owns the middle rung and is what Phase 0+1 delivers.
+
+The full assurance case — what is proven, what is trusted, the proof's assumptions, and how the
+trusted shell and the integrity/confidentiality gate are justified — is in
+[`docs/ASSURANCE.md`](docs/ASSURANCE.md).
 
 ## The proven core (`src/core/`)
 
@@ -98,7 +102,10 @@ The publisher points its PubSub output at the sender's `9701`; subscribers liste
 - **Phase 4 — encryption** ✅ ChaCha20-Poly1305 AEAD ([SPARKNaCl](https://github.com/rod-chapman/SPARKNaCl),
   vendored under `deps/`, BSD) wrapped by the proven `secure` module; wired into the shell via
   `--key`. Encrypt-then-fragment, so RS protects the ciphertext; a bad tag is dropped, never emitted.
-- **Phase 5 — assurance argument** the proven/trusted boundary, as in gnat-lt-pro's `ASSURANCE.md`.
+- **Phase 5 — assurance argument** ✅ [`docs/ASSURANCE.md`](docs/ASSURANCE.md): the claim, the
+  proven/trusted boundary, what the 351-check proof does and does not establish, the TCB (incl. the
+  SPARKNaCl reliance), how the trusted shell is justified, the integrity/confidentiality gate, and
+  the residual risks (availability, replay, nonce uniqueness, key management).
 
 ## Vendored dependency
 
