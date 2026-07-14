@@ -1,12 +1,16 @@
 # opc-diode
 
+*Made 🄯 libre (free as in freedom) with ❤️ at Politehnica University of Timișoara — quite possibly the first formally-verified (machine-checked proof of no run-time errors) **OPC UA data-diode relay** for one-way mirroring of **OPC UA / OPC UA PubSub** process data across an air gap. Built specifically for industrial control and SCADA — power grids, water treatment plants, oil & gas pipelines, railways, and telecommunications networks — **not** a general-purpose file mover.*
+
+*Because we care — and because critical-infrastructure protection should not depend on proprietary / closed-source systems, and should be made FREE.*
+
 **A high-assurance Ada/SPARK OPC UA PubSub data-diode relay** — a clean-slate rewrite of the ideas in
 [opcua-data-diode](https://github.com/cherubimro/opcua-data-diode), aimed at *formal proof* of the
 reconstruction path rather than parity with the Python original.
 
 > Status: **Complete and hardened.** GF(2^8), Reed-Solomon (K up to 72, covering the full 64 KB UADP
 > range), UADP header parse, diode framing, protect + erasure-recover + dedup, a per-stream anti-replay
-> window, and ChaCha20-Poly1305 AEAD are all proved AoRTE by `gnatprove`: **350 checks, 0 unproved, 0
+> window, and ChaCha20-Poly1305 AEAD are all proved AoRTE by `gnatprove`: **387 checks, 0 unproved, 0
 > justified** (SPARKNaCl provides the crypto, separately proven). The trusted UDP shell moves real
 > NetworkMessages end-to-end byte-identical -- cleartext or authenticated-encrypted, with a
 > cross-message interleaving scheduler for burst-loss resilience; a wrong key or tampering is dropped.
@@ -72,7 +76,7 @@ Toolchain: **GNAT 14.2.0 + gprbuild + gnatprove** (SPARK). `tools/env.sh` puts t
 
 ```sh
 ./tools/build.sh          # -> bin/{test_core, od_sender, od_receiver, od_probe}
-./tools/prove.sh          # gnatprove over the core (350 checks, 0 unproved)
+./tools/prove.sh          # gnatprove over the core (387 checks, 0 unproved)
 ./tools/check.sh          # build + proof + core sanity + end-to-end loopback
 ./tools/loopback-test.sh  # od_sender <-UDP-> od_receiver, byte-identical
 ```
@@ -99,7 +103,7 @@ The publisher points its PubSub output at the sender's `9701`; subscribers liste
 ### Transports: UDP (default) or DPDK kernel-bypass (opt-in)
 
 The proven core takes a fixed packet buffer and never names a socket, so the transport lives wholly in
-the trusted shell — **swapping it re-discharges none of the 350 proof obligations.** The default is
+the trusted shell — **swapping it re-discharges none of the 387 proof obligations.** The default is
 `GNAT.Sockets` UDP. An optional DPDK poll-mode backend moves diode packets as raw Ethernet frames
 (EtherType `0x88B7`):
 
@@ -129,7 +133,7 @@ also needs root, an IOMMU and a spare NIC. Safety and integrity are unaffected; 
   vendored under `deps/`, BSD) wrapped by the proven `secure` module; wired into the shell via
   `--key`. Encrypt-then-fragment, so RS protects the ciphertext; a bad tag is dropped, never emitted.
 - **Phase 5 — assurance argument** ✅ [`docs/ASSURANCE.md`](docs/ASSURANCE.md): the claim, the
-  proven/trusted boundary, what the 350-check proof does and does not establish, the TCB (incl. the
+  proven/trusted boundary, what the 387-check proof does and does not establish, the TCB (incl. the
   SPARKNaCl reliance), how the trusted shell is justified, the integrity/confidentiality gate, and
   the residual risks.
 - **Hardening** ✅ RS extended to K=72 (the full 64 KB UADP range, LT unneeded); a per-stream
@@ -156,14 +160,3 @@ SPARKNaCl (BSD) and S2OPC / open62541 (Apache-2.0 / MPL-2.0, file-level copyleft
 AGPL-compatible; their notices are retained in their vendored trees, and `tools/*-build.sh` reproduce
 them from source. The S2OPC and open62541 trees are gitignored — this repository distributes no
 third-party binaries.
-
----
-
-Made 🄯 libre (free as in freedom) with ❤️ at Politehnica University of Timișoara — quite possibly the
-first formally-verified (machine-checked proof of no run-time errors) **OPC UA data-diode relay** for
-one-way mirroring of **OPC UA / OPC UA PubSub** process data across an air gap. Built specifically for
-industrial control and SCADA — power grids, water treatment plants, oil & gas pipelines, railways, and
-telecommunications networks — **not** a general-purpose file mover.
-
-Because we care — and because critical-infrastructure protection should not depend on proprietary /
-closed-source systems, and should be made FREE.

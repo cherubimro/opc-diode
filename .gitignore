@@ -5,3 +5,7 @@ deps/sparknacl/lib/
 deps/s2opc/
 deps/dpdk/
 deps/open62541/
+
+# S2OPC writes runtime trace logs to the CWD; never commit them
+Trace_*.log
+/tmp/od-memif-*

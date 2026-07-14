@@ -66,19 +66,19 @@ optional DPDK shim, §5.1).
 
 ## 3. What the proof establishes
 
-`gnatprove` (level 2, `--steps=25000`) over the core discharges **350
+`gnatprove` (level 2, `--steps=25000`) over the core discharges **387
 verification conditions, 0 unproved, 0 justified**:
 
-- **Run-time checks** (171) — no overflow, no array index or range violation,
+- **Run-time checks** (184) — no overflow, no array index or range violation,
   no division by zero, anywhere in the core, on any input including a hostile
   UDP datagram.
-- **Assertions & functional contracts** (104) — the pre/postconditions,
+- **Assertions & functional contracts** (125) — the pre/postconditions,
   including `Diode_Wire.Parse`'s postcondition that hands validated field bounds
   to the relay, the anti-replay window arithmetic, and the length relations in
   `Secure`.
 - **Loop termination** (16) — every loop, including the Gauss-Jordan erasure
   decode, the UADP cursor and the anti-replay window slide.
-- **Initialization & non-aliasing** (59) — no read of an uninitialized value.
+- **Initialization & non-aliasing** (62) — no read of an uninitialized value.
 
 (The `--steps` budget is raised from the level-2 default because the K=72
 Reed-Solomon instance makes the index/overflow VCs larger; nothing is justified
@@ -179,7 +179,7 @@ The trusted side is justified by three means:
 
 The proven core's whole input contract is a `Diode_Wire.Packet` buffer, so it
 never names a socket: **which mechanism carries a diode packet is a property of
-the trusted shell alone, and swapping it re-discharges none of the 350 proof
+the trusted shell alone, and swapping it re-discharges none of the 387 proof
 obligations.** Two transports exist, chosen at build time and selected at run
 time:
 
@@ -270,7 +270,7 @@ erasure decode succeeding, and the link is assumed physically one-way.)
 ## 8. Reproducing the evidence
 
 ```sh
-./tools/prove.sh          # gnatprove: 350 checks, 0 unproved, 0 justified
+./tools/prove.sh          # gnatprove: 387 checks, 0 unproved, 0 justified
 ./tools/check.sh          # build + proof + core sanity + end-to-end loopback
 ./tools/loopback-test.sh  # cleartext + encrypted + wrong-key + interleaved (UDP)
 
