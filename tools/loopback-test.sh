@@ -21,13 +21,13 @@ KEY_B=$(printf '%064x' 2596069104)     # different key
 FAILS=0
 
 PORT_BASE=9740
-run_pass () {   # $1=label $2=snd_key_args $3=rcv_key_args $4=expect(all|none)
-    local label="$1" sk="$2" rk="$3" expect="$4"
+run_pass () {   # $1=label $2=snd_key_args $3=rcv_key_args $4=expect $5=extra_snd_args
+    local label="$1" sk="$2" rk="$3" expect="$4" extra="${5:-}"
     local pin=$PORT_BASE pd=$((PORT_BASE+1)) po=$((PORT_BASE+2))
     PORT_BASE=$((PORT_BASE+10))
     local tmp; tmp="$(mktemp -d)"
     ./bin/od_receiver "$pd" 127.0.0.1 "$po" $rk 2>"$tmp/rx.log" & local rx=$!
-    ./bin/od_sender   "$pin" 127.0.0.1 "$pd" --parity 3 --pace-us 200 $sk \
+    ./bin/od_sender   "$pin" 127.0.0.1 "$pd" --parity 3 --pace-us 200 $extra $sk \
         2>"$tmp/snd.log" & local snd=$!
     sleep 0.5
     ./bin/od_probe recv "$po" "$COUNT" "$SEED" "$MAXLEN" >"$tmp/sink.out" 2>&1 & local sink=$!
@@ -54,6 +54,7 @@ echo "== OPC diode loopback =="
 run_pass "cleartext"            ""              ""              all
 run_pass "encrypted"           "--key $KEY_A"  "--key $KEY_A"  all
 run_pass "encrypted wrong key" "--key $KEY_A"  "--key $KEY_B"  none
+run_pass "encrypted+interleave" "--key $KEY_A" "--key $KEY_A"  all  "--interleave 4"
 
 echo
 if [ "$FAILS" = 0 ]; then echo ">>> LOOPBACK OK"; else echo ">>> $FAILS PASS(ES) FAILED"; exit 1; fi

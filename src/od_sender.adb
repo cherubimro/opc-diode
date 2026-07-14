@@ -32,12 +32,16 @@ with Relay;
 with Od_Stream;
 with Secure;
 with Od_Key;
+with Diode_Wire;
 
 procedure Od_Sender with SPARK_Mode => Off is
 
    In_Sock, Out_Sock : Socket_Type;
    Parity  : Natural := 2;
    Pace_Us : Natural := 0;
+
+   Max_Interleave : constant := 16;
+   Interleave     : Natural  := 1;   --  1 = no interleaving (send each at once)
 
    Have_Key : Boolean := False;
    Key      : Secure.Key_Bytes := (others => 0);
@@ -75,7 +79,7 @@ begin
    if Argument_Count < 3 then
       Put_Line (Standard_Error,
         "[usage] od_sender <in_port> <diode_ip> <diode_port>"
-        & " [--parity M] [--pace-us N]");
+        & " [--parity M] [--pace-us N] [--interleave D]");
       GNAT.OS_Lib.OS_Exit (2);
    end if;
 
@@ -90,6 +94,8 @@ begin
             Argi := Argi + 1; Parity := Natural'Value (Argument (Argi));
          elsif Argument (Argi) = "--pace-us" and then Argi < Argument_Count then
             Argi := Argi + 1; Pace_Us := Natural'Value (Argument (Argi));
+         elsif Argument (Argi) = "--interleave" and then Argi < Argument_Count then
+            Argi := Argi + 1; Interleave := Natural'Value (Argument (Argi));
          elsif Argument (Argi) = "--key" and then Argi < Argument_Count then
             Argi := Argi + 1;
             Od_Key.Parse_Hex (Argument (Argi), Key, Have_Key);
@@ -103,6 +109,8 @@ begin
       end loop;
       if Parity < 1 then Parity := 1; end if;
       if Parity > Rs.Max_M then Parity := Rs.Max_M; end if;
+      if Interleave < 1 then Interleave := 1; end if;
+      if Interleave > Max_Interleave then Interleave := Max_Interleave; end if;
       if Have_Key then Epoch := Od_Key.Run_Epoch; end if;
 
       Create_Socket (In_Sock, Family_Inet, Socket_Datagram);
@@ -116,97 +124,143 @@ begin
 
       Put_Line (Standard_Error,
         "[od_sender] in=" & Argument (1) & " -> diode " & Diode_IP & ":"
-        & Argument (3) & "  parity=" & Parity'Image
+        & Argument (3) & "  parity=" & Parity'Image & "  interleave=" & Interleave'Image
         & (if Have_Key then "  encrypted" else "  cleartext"));
    end;
 
-   --  ---- main loop ----
+   --  ---- interleaving buffer ----
+   --  Cross-message interleaving spreads a burst loss across several messages:
+   --  we buffer up to Interleave protected messages, then emit them round-robin
+   --  (packet 1 of each, then packet 2 of each, ...).  A short burst then hits
+   --  one "round" -- roughly one packet per message -- instead of consecutive
+   --  packets of a single message.  A receive timeout flushes a partial buffer
+   --  so latency stays bounded.  Interleave = 1 reproduces the old behaviour.
    declare
-      In_Buf  : Stream_Element_Array (1 .. Stream_Element_Offset (Uadp.Max_Msg));
-      Last    : Stream_Element_Offset;
-      From    : Sock_Addr_Type;
-      Info    : Uadp.Header_Info;
-      Msg     : Relay.Msg_Bytes;
-      Pkts    : Relay.Packet_Array;
-      Lens    : Relay.Length_Array;
-      N_Out   : Relay.Out_Count;
-      Ok      : Boolean;
-      UMsg    : Uadp.Message := (others => 0);
+   type Job is record
+      Pkts : Relay.Packet_Array;
+      Lens : Relay.Length_Array;
+      N    : Relay.Out_Count := 0;
+   end record;
+   Jobs  : array (1 .. Max_Interleave) of Job;   --  static storage, not stack
+   NJobs : Natural := 0;
+
+   procedure Emit (P : Diode_Wire.Packet; L : Natural) is
+      OB : Stream_Element_Array (1 .. Stream_Element_Offset (L));
+      OL : Stream_Element_Offset;
    begin
-      loop
-         Receive_Socket (In_Sock, In_Buf, Last, From);
-         exit when Last < In_Buf'First;             --  socket closed
-
-         declare
-            L : constant Natural := Natural (Last - In_Buf'First + 1);
-         begin
-            if L > 0 and then L <= Relay.Max_Msg_Len then
-               --  Copy datagram into both the UADP view and the relay input.
-               for I in 1 .. L loop
-                  UMsg (I - 1) := U8 (In_Buf (In_Buf'First + Stream_Element_Offset (I - 1)));
-                  Msg (I)      := U8 (In_Buf (In_Buf'First + Stream_Element_Offset (I - 1)));
-               end loop;
-
-               Uadp.Parse (UMsg, L, Info);
-               declare
-                  SID : constant U64 :=
-                    (if Info.Valid then Od_Stream.Stream_Of (Info) else 0);
-                  Seq : constant U32 := Next_Seq (SID);
-                  R_Len : Natural := L;   --  bytes handed to Relay.Protect
-               begin
-                  --  Encrypt-then-fragment: seal the whole NetworkMessage, then
-                  --  hand the blob (nonce||tag||ciphertext) to the relay.  The
-                  --  nonce is (epoch, stream, seq) -- unique per key.
-                  if Have_Key and then L <= Relay.Max_Msg_Len - Secure.Overhead
-                  then
-                     declare
-                        Plain : Secure.Plain_Buffer := (others => 0);
-                        Blob  : Secure.Blob_Buffer;
-                        BLen  : Secure.Blob_Len_T;
-                        Nonce : Secure.Nonce_Bytes := (others => 0);
-                     begin
-                        for I in 1 .. L loop Plain (I) := Msg (I); end loop;
-                        Nonce (1) := U8 (Epoch and 16#FF#);
-                        Nonce (2) := U8 ((Epoch / 2 ** 8) and 16#FF#);
-                        Nonce (3) := U8 ((Epoch / 2 ** 16) and 16#FF#);
-                        Nonce (4) := U8 ((Epoch / 2 ** 24) and 16#FF#);
-                        Nonce (5) := U8 (SID and 16#FF#);
-                        Nonce (6) := U8 ((SID / 2 ** 8) and 16#FF#);
-                        Nonce (7) := U8 ((SID / 2 ** 16) and 16#FF#);
-                        Nonce (8) := U8 ((SID / 2 ** 24) and 16#FF#);
-                        Nonce (9)  := U8 (Seq and 16#FF#);
-                        Nonce (10) := U8 ((Seq / 2 ** 8) and 16#FF#);
-                        Nonce (11) := U8 ((Seq / 2 ** 16) and 16#FF#);
-                        Nonce (12) := U8 ((Seq / 2 ** 24) and 16#FF#);
-                        Secure.Seal (Plain, L, Key, Nonce, Blob, BLen);
-                        for I in 1 .. BLen loop Msg (I) := Blob (I); end loop;
-                        R_Len := BLen;
-                     end;
-                  end if;
-
-                  Relay.Protect (Msg, R_Len, SID, Seq, Parity,
-                                 Pkts, Lens, N_Out, Ok);
-                  if Ok then
-                     for S in 1 .. N_Out loop
-                        declare
-                           OB : Stream_Element_Array
-                             (1 .. Stream_Element_Offset (Lens (S)));
-                           OL : Stream_Element_Offset;
-                        begin
-                           for J in 1 .. Lens (S) loop
-                              OB (Stream_Element_Offset (J)) :=
-                                Stream_Element (Pkts (S) (J - 1));
-                           end loop;
-                           Send_Socket (Out_Sock, OB, OL);
-                        end;
-                        if Pace_Us > 0 then
-                           delay Duration (Pace_Us) / 1_000_000.0;
-                        end if;
-                     end loop;
-                  end if;
-               end;
-            end if;
-         end;
+      for J in 1 .. L loop
+         OB (Stream_Element_Offset (J)) := Stream_Element (P (J - 1));
       end loop;
+      Send_Socket (Out_Sock, OB, OL);
+      if Pace_Us > 0 then
+         delay Duration (Pace_Us) / 1_000_000.0;
+      end if;
+   end Emit;
+
+   procedure Flush is
+      Max_N : Relay.Out_Count := 0;
+   begin
+      for J in 1 .. NJobs loop
+         if Jobs (J).N > Max_N then Max_N := Jobs (J).N; end if;
+      end loop;
+      for Round in 1 .. Max_N loop            --  round-robin across the jobs
+         for J in 1 .. NJobs loop
+            if Round <= Jobs (J).N then
+               Emit (Jobs (J).Pkts (Round), Jobs (J).Lens (Round));
+            end if;
+         end loop;
+      end loop;
+      NJobs := 0;
+   end Flush;
+
+   --  Build one protected (optionally encrypted) message from L datagram bytes
+   --  into the next job slot.
+   procedure Make_Job (In_Buf : Stream_Element_Array; L : Natural) is
+      Info  : Uadp.Header_Info;
+      Msg   : Relay.Msg_Bytes;
+      UMsg  : Uadp.Message := (others => 0);
+      R_Len : Natural := L;
+   begin
+      for I in 1 .. L loop
+         UMsg (I - 1) := U8 (In_Buf (In_Buf'First + Stream_Element_Offset (I - 1)));
+         Msg (I)      := U8 (In_Buf (In_Buf'First + Stream_Element_Offset (I - 1)));
+      end loop;
+      Uadp.Parse (UMsg, L, Info);
+
+      declare
+         SID : constant U64 :=
+           (if Info.Valid then Od_Stream.Stream_Of (Info) else 0);
+         Seq : constant U32 := Next_Seq (SID);
+         Ok  : Boolean;
+      begin
+         if Have_Key and then L <= Relay.Max_Msg_Len - Secure.Overhead then
+            declare
+               Plain : Secure.Plain_Buffer := (others => 0);
+               Blob  : Secure.Blob_Buffer;
+               BLen  : Secure.Blob_Len_T;
+               Nonce : Secure.Nonce_Bytes := (others => 0);
+            begin
+               for I in 1 .. L loop Plain (I) := Msg (I); end loop;
+               Nonce (1) := U8 (Epoch and 16#FF#);
+               Nonce (2) := U8 ((Epoch / 2 ** 8) and 16#FF#);
+               Nonce (3) := U8 ((Epoch / 2 ** 16) and 16#FF#);
+               Nonce (4) := U8 ((Epoch / 2 ** 24) and 16#FF#);
+               Nonce (5) := U8 (SID and 16#FF#);
+               Nonce (6) := U8 ((SID / 2 ** 8) and 16#FF#);
+               Nonce (7) := U8 ((SID / 2 ** 16) and 16#FF#);
+               Nonce (8) := U8 ((SID / 2 ** 24) and 16#FF#);
+               Nonce (9)  := U8 (Seq and 16#FF#);
+               Nonce (10) := U8 ((Seq / 2 ** 8) and 16#FF#);
+               Nonce (11) := U8 ((Seq / 2 ** 16) and 16#FF#);
+               Nonce (12) := U8 ((Seq / 2 ** 24) and 16#FF#);
+               Secure.Seal (Plain, L, Key, Nonce, Blob, BLen);
+               for I in 1 .. BLen loop Msg (I) := Blob (I); end loop;
+               R_Len := BLen;
+            end;
+         end if;
+
+         NJobs := NJobs + 1;
+         Relay.Protect (Msg, R_Len, SID, Seq, Parity,
+                        Jobs (NJobs).Pkts, Jobs (NJobs).Lens,
+                        Jobs (NJobs).N, Ok);
+         if not Ok then NJobs := NJobs - 1; end if;   --  drop unprotectable msg
+      end;
+   end Make_Job;
+
+   --  ---- main loop ----
+   In_Buf : Stream_Element_Array (1 .. Stream_Element_Offset (Uadp.Max_Msg));
+   Last   : Stream_Element_Offset;
+   From   : Sock_Addr_Type;
+begin
+   --  A short receive timeout lets a partially-filled interleave buffer flush.
+   if Interleave > 1 then
+      Set_Socket_Option (In_Sock, Socket_Level, (Receive_Timeout, Timeout => 0.05));
+   end if;
+
+   loop
+      declare
+         Timed_Out : Boolean := False;
+      begin
+         begin
+            Receive_Socket (In_Sock, In_Buf, Last, From);
+         exception
+            when Socket_Error => Timed_Out := True;   --  receive timeout
+         end;
+
+         if Timed_Out then
+            if NJobs > 0 then Flush; end if;          --  flush partial buffer
+         else
+            exit when Last < In_Buf'First;            --  socket closed
+            declare
+               L : constant Natural := Natural (Last - In_Buf'First + 1);
+            begin
+               if L > 0 and then L <= Relay.Max_Msg_Len - Secure.Overhead then
+                  Make_Job (In_Buf, L);
+                  if NJobs >= Interleave then Flush; end if;
+               end if;
+            end;
+         end if;
+      end;
+   end loop;
    end;
 end Od_Sender;
