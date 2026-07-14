@@ -12,6 +12,8 @@
 --  the data path only parses the UADP header (to dedup and route) and treats
 --  each DataSetMessage as an opaque, verbatim payload.  The whole path can
 --  therefore live in the proven SPARK core under src/core.
+with "deps/sparknacl/sparknacl.gpr";
+
 project Opc_Diode is
 
    for Source_Dirs use ("src/core", "src", "tests");

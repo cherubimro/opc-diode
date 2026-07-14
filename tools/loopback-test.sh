@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # End-to-end loopback for the OPC diode shell, all on localhost:
 #
-#   od_probe send  --> [P_IN] od_sender --UDP diode--> [P_DIODE] od_receiver --> [P_OUT] od_probe recv
+#   od_probe send --> [P_IN] od_sender --UDP diode--> [P_DIODE] od_receiver --> [P_OUT] od_probe recv
 #
-# Verifies that synthetic UADP NetworkMessages survive protect + one-way
-# transport + erasure-recover + dedup and arrive byte-identical.  No packet loss
-# is injected here (that is the RS unit test's job); this proves the wiring.
+# Three passes:
+#   1. cleartext           -- messages arrive byte-identical
+#   2. encrypted           -- same, with ChaCha20-Poly1305 on the wire
+#   3. encrypted, wrong key -- receiver must recover NOTHING (tag rejects all)
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$here/env.sh"
@@ -14,20 +15,45 @@ cd "$here/.."
 
 gprbuild -q -P opc_diode.gpr >/dev/null
 
-P_IN=9701; P_DIODE=9702; P_OUT=9703
 COUNT=${COUNT:-40}; SEED=${SEED:-777}; MAXLEN=${MAXLEN:-6000}
-TMP="$(mktemp -d)"; trap 'kill $RX $SND $SINK 2>/dev/null; rm -rf "$TMP"' EXIT
+KEY_A=$(printf '%064x' 305419896)      # 0x...12345678
+KEY_B=$(printf '%064x' 2596069104)     # different key
+FAILS=0
 
-./bin/od_receiver "$P_DIODE" 127.0.0.1 "$P_OUT" 2>"$TMP/rx.log" & RX=$!
-./bin/od_sender   "$P_IN" 127.0.0.1 "$P_DIODE" --parity 3 --pace-us 200 \
-    2>"$TMP/snd.log" & SND=$!
-sleep 0.5
+PORT_BASE=9740
+run_pass () {   # $1=label $2=snd_key_args $3=rcv_key_args $4=expect(all|none)
+    local label="$1" sk="$2" rk="$3" expect="$4"
+    local pin=$PORT_BASE pd=$((PORT_BASE+1)) po=$((PORT_BASE+2))
+    PORT_BASE=$((PORT_BASE+10))
+    local tmp; tmp="$(mktemp -d)"
+    ./bin/od_receiver "$pd" 127.0.0.1 "$po" $rk 2>"$tmp/rx.log" & local rx=$!
+    ./bin/od_sender   "$pin" 127.0.0.1 "$pd" --parity 3 --pace-us 200 $sk \
+        2>"$tmp/snd.log" & local snd=$!
+    sleep 0.5
+    ./bin/od_probe recv "$po" "$COUNT" "$SEED" "$MAXLEN" >"$tmp/sink.out" 2>&1 & local sink=$!
+    sleep 0.3
+    ./bin/od_probe send 127.0.0.1 "$pin" "$COUNT" "$SEED" "$MAXLEN"
+    wait "$sink" 2>/dev/null; local rc=$?
+    kill "$rx" "$snd" 2>/dev/null; wait "$rx" "$snd" 2>/dev/null
 
-# Start the sink first (it blocks on receive), then inject.
-./bin/od_probe recv "$P_OUT" "$COUNT" "$SEED" "$MAXLEN" >"$TMP/sink.out" 2>&1 & SINK=$!
-sleep 0.3
-./bin/od_probe send 127.0.0.1 "$P_IN" "$COUNT" "$SEED" "$MAXLEN"
+    local got; got="$(grep -oE 'recovered [0-9]+' "$tmp/sink.out" | awk '{print $2}')"
+    got="${got:-0}"
+    if [ "$expect" = all ]; then
+        if [ "$rc" = 0 ] && [ "$got" = "$COUNT" ]; then
+            echo "  PASS  $label: $got/$COUNT byte-identical"
+        else echo "  FAIL  $label: $got/$COUNT (rc=$rc)"; FAILS=$((FAILS+1)); fi
+    else
+        if [ "$got" = 0 ]; then
+            echo "  PASS  $label: recovered nothing (tag rejected all)"
+        else echo "  FAIL  $label: leaked $got messages"; FAILS=$((FAILS+1)); fi
+    fi
+    rm -rf "$tmp"
+}
 
-wait $SINK; RC=$?
-echo "----- sink -----"; cat "$TMP/sink.out"
-exit $RC
+echo "== OPC diode loopback =="
+run_pass "cleartext"            ""              ""              all
+run_pass "encrypted"           "--key $KEY_A"  "--key $KEY_A"  all
+run_pass "encrypted wrong key" "--key $KEY_A"  "--key $KEY_B"  none
+
+echo
+if [ "$FAILS" = 0 ]; then echo ">>> LOOPBACK OK"; else echo ">>> $FAILS PASS(ES) FAILED"; exit 1; fi

@@ -12,8 +12,12 @@
 --  is done by the proven core (Uadp, Relay, Diode_Wire).
 --
 --  Usage:
---    od_sender <in_port> <diode_ip> <diode_port> [--parity M] [--pace-us N]
---  The publisher must send NetworkMessages to <in_port> on this host.
+--    od_sender <in_port> <diode_ip> <diode_port>
+--             [--parity M] [--pace-us N] [--key HEX64]
+--  The publisher must send NetworkMessages to <in_port> on this host.  With
+--  --key (32 bytes as 64 hex chars), each NetworkMessage is authenticated-
+--  encrypted (ChaCha20-Poly1305) before it is fragmented; the receiver must
+--  carry the SAME key.  Without --key, payloads cross in the clear.
 
 pragma Ada_2022;
 with Ada.Command_Line;         use Ada.Command_Line;
@@ -26,12 +30,18 @@ with Uadp;
 with Rs;
 with Relay;
 with Od_Stream;
+with Secure;
+with Od_Key;
 
 procedure Od_Sender with SPARK_Mode => Off is
 
    In_Sock, Out_Sock : Socket_Type;
    Parity  : Natural := 2;
    Pace_Us : Natural := 0;
+
+   Have_Key : Boolean := False;
+   Key      : Secure.Key_Bytes := (others => 0);
+   Epoch    : U32 := 0;         --  per-run nonce prefix (unique across restarts)
 
    --  Per-stream monotonic message counters (small fixed table).
    Max_Streams : constant := 64;
@@ -80,11 +90,20 @@ begin
             Argi := Argi + 1; Parity := Natural'Value (Argument (Argi));
          elsif Argument (Argi) = "--pace-us" and then Argi < Argument_Count then
             Argi := Argi + 1; Pace_Us := Natural'Value (Argument (Argi));
+         elsif Argument (Argi) = "--key" and then Argi < Argument_Count then
+            Argi := Argi + 1;
+            Od_Key.Parse_Hex (Argument (Argi), Key, Have_Key);
+            if not Have_Key then
+               Put_Line (Standard_Error,
+                 "[od_sender] --key must be 64 hex chars (32 bytes)");
+               GNAT.OS_Lib.OS_Exit (2);
+            end if;
          end if;
          Argi := Argi + 1;
       end loop;
       if Parity < 1 then Parity := 1; end if;
       if Parity > Rs.Max_M then Parity := Rs.Max_M; end if;
+      if Have_Key then Epoch := Od_Key.Run_Epoch; end if;
 
       Create_Socket (In_Sock, Family_Inet, Socket_Datagram);
       Set_Socket_Option (In_Sock, Socket_Level, (Reuse_Address, True));
@@ -97,7 +116,8 @@ begin
 
       Put_Line (Standard_Error,
         "[od_sender] in=" & Argument (1) & " -> diode " & Diode_IP & ":"
-        & Argument (3) & "  parity=" & Parity'Image);
+        & Argument (3) & "  parity=" & Parity'Image
+        & (if Have_Key then "  encrypted" else "  cleartext"));
    end;
 
    --  ---- main loop ----
@@ -132,8 +152,39 @@ begin
                   SID : constant U64 :=
                     (if Info.Valid then Od_Stream.Stream_Of (Info) else 0);
                   Seq : constant U32 := Next_Seq (SID);
+                  R_Len : Natural := L;   --  bytes handed to Relay.Protect
                begin
-                  Relay.Protect (Msg, L, SID, Seq, Parity,
+                  --  Encrypt-then-fragment: seal the whole NetworkMessage, then
+                  --  hand the blob (nonce||tag||ciphertext) to the relay.  The
+                  --  nonce is (epoch, stream, seq) -- unique per key.
+                  if Have_Key and then L <= Relay.Max_Msg_Len - Secure.Overhead
+                  then
+                     declare
+                        Plain : Secure.Plain_Buffer := (others => 0);
+                        Blob  : Secure.Blob_Buffer;
+                        BLen  : Secure.Blob_Len_T;
+                        Nonce : Secure.Nonce_Bytes := (others => 0);
+                     begin
+                        for I in 1 .. L loop Plain (I) := Msg (I); end loop;
+                        Nonce (1) := U8 (Epoch and 16#FF#);
+                        Nonce (2) := U8 ((Epoch / 2 ** 8) and 16#FF#);
+                        Nonce (3) := U8 ((Epoch / 2 ** 16) and 16#FF#);
+                        Nonce (4) := U8 ((Epoch / 2 ** 24) and 16#FF#);
+                        Nonce (5) := U8 (SID and 16#FF#);
+                        Nonce (6) := U8 ((SID / 2 ** 8) and 16#FF#);
+                        Nonce (7) := U8 ((SID / 2 ** 16) and 16#FF#);
+                        Nonce (8) := U8 ((SID / 2 ** 24) and 16#FF#);
+                        Nonce (9)  := U8 (Seq and 16#FF#);
+                        Nonce (10) := U8 ((Seq / 2 ** 8) and 16#FF#);
+                        Nonce (11) := U8 ((Seq / 2 ** 16) and 16#FF#);
+                        Nonce (12) := U8 ((Seq / 2 ** 24) and 16#FF#);
+                        Secure.Seal (Plain, L, Key, Nonce, Blob, BLen);
+                        for I in 1 .. BLen loop Msg (I) := Blob (I); end loop;
+                        R_Len := BLen;
+                     end;
+                  end if;
+
+                  Relay.Protect (Msg, R_Len, SID, Seq, Parity,
                                  Pkts, Lens, N_Out, Ok);
                   if Ok then
                      for S in 1 .. N_Out loop

@@ -4,10 +4,12 @@
 [opcua-data-diode](https://github.com/cherubimro/opcua-data-diode), aimed at *formal proof* of the
 reconstruction path rather than parity with the Python original.
 
-> Status: **Phase 3 complete — a working, proven relay.** The proven core (GF(2⁸), Reed-Solomon, UADP
-> header parse, diode framing, protect + erasure-recover + dedup) is AoRTE-clean: **318 checks, 0
-> unproved, 0 justified**. On top sits a small trusted UDP shell (`od_sender` / `od_receiver`), and the
-> two move real NetworkMessages end-to-end over UDP byte-identical (`tools/loopback-test.sh`: 40/40).
+> Status: **Phase 4 complete — a working, proven, ENCRYPTED relay.** The proven core (GF(2⁸),
+> Reed-Solomon, UADP header parse, diode framing, protect + erasure-recover + dedup, and the
+> ChaCha20-Poly1305 AEAD wrapper) is AoRTE-clean: **351 checks, 0 unproved, 0 justified** (SPARKNaCl
+> provides the crypto, separately proven). The trusted UDP shell moves real NetworkMessages
+> end-to-end byte-identical, in the clear or authenticated-encrypted; a wrong key or any tampering is
+> rejected, never emitted (`tools/loopback-test.sh`).
 
 ## Why this design, and how it differs from the Python original
 
@@ -54,6 +56,7 @@ Reed-Solomon owns the middle rung and is what Phase 0+1 delivers.
 | `wire_types` | The one shared byte/scalar type (`U8`..`U64`), so a datagram is field elements or protocol bytes with no conversion |
 | `diode_wire` | Our own fixed 25-byte framing across the diode: proven `Serialize`/`Parse`, every field validated before it is trusted |
 | `relay` | `Protect` (NetworkMessage → K data + M parity diode packets) and `Collector`/`Offer` (regroup by stream, erasure-decode, reassemble, dedup). Fixed-capacity, allocation-free; a single-packet message is K=1 so repetition needs no special case |
+| `secure` | Authenticated encryption wrapper over SPARKNaCl's ChaCha20-Poly1305 AEAD: `Seal` a NetworkMessage into `[nonce\|tag\|ciphertext]`, `Open` verifies the 16-byte tag and rejects a wrong key or any tampering. Sits above the relay, so the erasure code protects the ciphertext |
 
 ## Build, test, prove
 
@@ -76,6 +79,10 @@ Toolchain: **GNAT 14.2.0 + gprbuild + gnatprove** (SPARK). `tools/env.sh` puts t
 ./bin/od_sender 9701 <receiver_ip> 9702 --parity 3 --pace-us 200
 ```
 
+Add `--key <64 hex chars>` to BOTH ends for authenticated encryption (ChaCha20-Poly1305). The key is
+pre-shared out of band; the sender encrypts each NetworkMessage before fragmenting, the receiver
+verifies the tag and drops anything that fails. Without `--key`, payloads cross in the clear.
+
 The publisher points its PubSub output at the sender's `9701`; subscribers listen on the receiver's
 `9703`. One-way throughout: nothing flows back.
 
@@ -88,6 +95,14 @@ The publisher points its PubSub output at the sender's `9701`; subscribers liste
   (`od_sender` / `od_receiver` / `od_stream`); works end-to-end byte-identical. *Refinements left*: a
   cross-message interleaving scheduler (today: simple pacing), and optionally the DPDK bypass + LT
   transport from gnat-lt-pro for the bulk rung.
-- **Phase 4 — encryption** AEAD from [SPARKNaCl](https://github.com/rod-chapman/SPARKNaCl) in the
-  proven core.
+- **Phase 4 — encryption** ✅ ChaCha20-Poly1305 AEAD ([SPARKNaCl](https://github.com/rod-chapman/SPARKNaCl),
+  vendored under `deps/`, BSD) wrapped by the proven `secure` module; wired into the shell via
+  `--key`. Encrypt-then-fragment, so RS protects the ciphertext; a bad tag is dropped, never emitted.
 - **Phase 5 — assurance argument** the proven/trusted boundary, as in gnat-lt-pro's `ASSURANCE.md`.
+
+## Vendored dependency
+
+`deps/sparknacl/` is [SPARKNaCl](https://github.com/rod-chapman/SPARKNaCl) (© Protean Code Limited,
+BSD licence, retained in `deps/sparknacl/LICENCE.md`), used for the ChaCha20-Poly1305 AEAD. It is a
+separately-proven library; our `tools/prove.sh` runs with `--no-subprojects`, so we rely on its
+published proof rather than re-verifying it.

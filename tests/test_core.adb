@@ -13,6 +13,7 @@ with Uadp;
 with Wire_Types;   use Wire_Types;
 with Diode_Wire;
 with Relay;
+with Secure;
 
 procedure Test_Core is
 
@@ -358,6 +359,72 @@ begin
          end loop;
          Check (Deliveries = 1, "dedup: one delivery despite all packets twice");
       end;
+   end;
+
+   --  Authenticated encryption: seal -> open round-trips; a wrong key or a
+   --  flipped byte is REJECTED, never silently decoded.
+   Put_Line ("== authenticated encryption (SPARKNaCl AEAD) ==");
+   declare
+      Rng2 : U64 := 16#B5297A4D7687A3C1#;
+      function R2 return U8 is
+      begin
+         Rng2 := Rng2 * 6364136223846793005 + 1442695040888963407;
+         return U8 ((Rng2 / 2 ** 33) mod 256);
+      end R2;
+
+      Key   : Secure.Key_Bytes;
+      Key2  : Secure.Key_Bytes;
+      Nonce : Secure.Nonce_Bytes;
+      P     : Secure.Plain_Buffer := (others => 0);
+      Blob  : Secure.Blob_Buffer;
+      BLen  : Secure.Blob_Len_T;
+      Got   : Secure.Plain_Buffer;
+      GLen  : Secure.Plain_Len_T;
+      Ok    : Boolean;
+   begin
+      for I in Key'Range  loop Key (I)  := R2; end loop;
+      for I in Key2'Range loop Key2 (I) := R2; end loop;
+      for I in Nonce'Range loop Nonce (I) := R2; end loop;
+
+      for PLen in Positive range 1 .. 3 loop
+         declare
+            L : constant Positive := (case PLen is
+                                         when 1 => 1,
+                                         when 2 => 1500,
+                                         when others => 20000);
+         begin
+            for I in 1 .. L loop P (I) := R2; end loop;
+
+            Secure.Seal (P, L, Key, Nonce, Blob, BLen);
+            Check (BLen = L + Secure.Overhead, "blob length = plain + 28");
+
+            --  correct key -> exact recovery
+            Secure.Open (Blob, BLen, Key, Got, GLen, Ok);
+            Check (Ok, "open with right key");
+            if Ok then
+               Check (GLen = L, "opened length");
+               declare Same : Boolean := True; begin
+                  for I in 1 .. L loop
+                     if Got (I) /= P (I) then Same := False; end if;
+                  end loop;
+                  Check (Same, "decrypted == plaintext");
+               end;
+            end if;
+
+            --  wrong key -> rejected
+            Secure.Open (Blob, BLen, Key2, Got, GLen, Ok);
+            Check (not Ok, "wrong key rejected");
+
+            --  tamper one ciphertext byte -> rejected
+            declare
+               Bad : Secure.Blob_Buffer := Blob;
+            begin
+               Bad (Secure.Overhead + 1) := Bad (Secure.Overhead + 1) xor 1;
+               Secure.Open (Bad, BLen, Key, Got, GLen, Ok);
+               Check (not Ok, "tampered ciphertext rejected");
+            end;
+         end;
+      end loop;
    end;
 
    New_Line;
