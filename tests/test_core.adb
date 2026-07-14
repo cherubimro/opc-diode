@@ -10,11 +10,15 @@ with Interfaces;
 with Gf256;       use Gf256;
 with Rs;
 with Uadp;
+with Wire_Types;   use Wire_Types;
+with Diode_Wire;
+with Relay;
 
 procedure Test_Core is
 
    use type Byte;
-   use type Uadp.U8, Uadp.U16, Uadp.U64, Uadp.Pub_Kind;
+   use type Wire_Types.U32, Wire_Types.U64;
+   use type Uadp.U16, Uadp.U64, Uadp.Pub_Kind;
    subtype Interfaces_Unsigned is Interfaces.Unsigned_64;
    use type Interfaces.Unsigned_64;
 
@@ -250,6 +254,110 @@ begin
       B (200);                    --  claims 200 writers, provides none
       Uadp.Parse (M, Pos, Info);
       Check (not Info.Valid,                      "msg5 lying count rejected");
+   end;
+
+   --  End-to-end relay: NetworkMessage -> Protect -> drop up to M packets in
+   --  any order -> Offer -> byte-identical recovery, then dedup of late copies.
+   Put_Line ("== relay protect/recover round-trip ==");
+   declare
+      Rng : U64 := 16#243F6A8885A308D3#;
+      function Rand return Byte is
+         Z : U64;
+      begin
+         Rng := Rng + 16#9E3779B97F4A7C15#;
+         Z := Rng;
+         Z := (Z xor (Z / 2 ** 30)) * 16#BF58476D1CE4E5B9#;
+         Z := (Z xor (Z / 2 ** 27)) * 16#94D049BB133111EB#;
+         Z := Z xor (Z / 2 ** 31);
+         return Byte (Z mod 256);
+      end Rand;
+
+      --  Varies which packets get dropped from trial to trial.
+      function Seq_Idx (S : U32) return Natural is (Natural (S mod 7));
+
+      procedure Trial (Msg_Len, M : Positive; Drop : Natural; Seq : U32) is
+         Src   : Relay.Msg_Bytes := (others => 0);
+         Pkts  : Relay.Packet_Array;
+         Lens  : Relay.Length_Array;
+         N     : Relay.Out_Count;
+         Ok    : Boolean;
+         Coll  : Relay.Collector;
+         Deliv : Boolean := False;
+         Got   : Relay.Msg_Bytes;
+         GLen  : Natural := 0;
+         Dropped : Natural := 0;
+      begin
+         for I in 1 .. Msg_Len loop
+            Src (I) := Rand;
+         end loop;
+
+         Relay.Protect (Src, Msg_Len, 16#DEADBEEF#, Seq, M, Pkts, Lens, N, Ok);
+         Check (Ok, "protect ok (len" & Msg_Len'Image & " M" & M'Image & ")");
+
+         Relay.Init (Coll);
+         --  Deliver packets, dropping `Drop` of them (drop the first Drop in a
+         --  rotated order so it's not always the parity that goes).
+         for I in 1 .. N loop
+            declare
+               Idx : constant Positive := 1 + ((I + Seq_Idx (Seq)) mod N);
+               P   : Boolean;
+               O   : Relay.Msg_Bytes;
+               L   : Natural;
+            begin
+               if Dropped < Drop then
+                  Dropped := Dropped + 1;         --  simulate loss
+               else
+                  Relay.Offer (Coll, Pkts (Idx), Lens (Idx), P, O, L);
+                  if P then Deliv := True; Got := O; GLen := L; end if;
+               end if;
+            end;
+         end loop;
+
+         if Drop <= M then
+            Check (Deliv, "recovered (len" & Msg_Len'Image
+                          & " drop" & Drop'Image & ")");
+            if Deliv then
+               Check (GLen = Msg_Len, "recovered length");
+               declare
+                  Same : Boolean := True;
+               begin
+                  for I in 1 .. Msg_Len loop
+                     if Got (I) /= Src (I) then Same := False; end if;
+                  end loop;
+                  Check (Same, "byte-identical NetworkMessage");
+               end;
+            end if;
+         end if;
+      end Trial;
+   begin
+      Trial (50,    2, 2, 1);     --  single packet, repetition (K=1, M=2)
+      Trial (1000,  2, 1, 2);     --  still K=1
+      Trial (3000,  2, 2, 3);     --  K=3, drop 2
+      Trial (10000, 4, 4, 4);     --  K=10, drop 4
+      Trial (32768, 6, 6, 5);     --  max message, K=32, drop 6
+      Trial (777,   3, 3, 6);     --  K=1, three copies, drop all but one
+
+      --  Dedup: two fully-redundant deliveries of the same message must yield
+      --  exactly one recovery.
+      declare
+         Src  : Relay.Msg_Bytes := (others => 0);
+         Pkts : Relay.Packet_Array; Lens : Relay.Length_Array;
+         N    : Relay.Out_Count;   Ok : Boolean;
+         Coll : Relay.Collector;   Deliveries : Natural := 0;
+      begin
+         for I in 1 .. 2000 loop Src (I) := Rand; end loop;
+         Relay.Protect (Src, 2000, 16#1234#, 42, 3, Pkts, Lens, N, Ok);
+         Relay.Init (Coll);
+         for Pass in 1 .. 2 loop
+            for I in 1 .. N loop
+               declare P : Boolean; O : Relay.Msg_Bytes; L : Natural; begin
+                  Relay.Offer (Coll, Pkts (I), Lens (I), P, O, L);
+                  if P then Deliveries := Deliveries + 1; end if;
+               end;
+            end loop;
+         end loop;
+         Check (Deliveries = 1, "dedup: one delivery despite all packets twice");
+      end;
    end;
 
    New_Line;

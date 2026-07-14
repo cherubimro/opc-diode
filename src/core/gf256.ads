@@ -13,9 +13,15 @@
 --  The body carries frozen log/antilog tables (primitive polynomial 0x11D),
 --  generated and verified offline.  See gf256.adb.
 
+with Wire_Types;
+
 package Gf256 with SPARK_Mode => On, Pure is
 
-   type Byte is mod 2 ** 8;
+   use type Wire_Types.U8;
+
+   --  The field element is the shared wire byte, so RS fragments, UADP bytes
+   --  and diode payloads are all the same type -- no conversion at the seams.
+   subtype Byte is Wire_Types.U8;
 
    --  0 .. 511, not 0 .. 254: the doubled antilog table is what lets Mul index
    --  with Log (A) + Log (B) directly -- worst case 510 -- with no modulo and,

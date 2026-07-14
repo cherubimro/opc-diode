@@ -11,6 +11,8 @@
 
 package body Uadp with SPARK_Mode => On is
 
+   use type Wire_Types.U8, Wire_Types.U16, Wire_Types.U32, Wire_Types.U64;
+
    --  ---- bounded readers -------------------------------------------------
    --  Each advances Cur by the field size, but only if the field fits; if it
    --  does not, Ok becomes False and Cur is left <= Len.  Once Ok is False it

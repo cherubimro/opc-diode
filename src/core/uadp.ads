@@ -17,12 +17,14 @@
 --  so a malformed or truncated NetworkMessage sets Valid = False and can never
 --  read out of bounds.  That property is what gnatprove establishes here.
 
+with Wire_Types;
+
 package Uadp with SPARK_Mode => On is
 
-   type U8  is mod 2 ** 8;
-   type U16 is mod 2 ** 16;
-   type U32 is mod 2 ** 32;
-   type U64 is mod 2 ** 64;
+   subtype U8  is Wire_Types.U8;
+   subtype U16 is Wire_Types.U16;
+   subtype U32 is Wire_Types.U32;
+   subtype U64 is Wire_Types.U64;
 
    --  A NetworkMessage carried in one UDP datagram.  The spec caps a payload at
    --  65535 bytes (larger is split across NetworkMessages), so this bound holds.

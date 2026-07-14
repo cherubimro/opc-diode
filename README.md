@@ -4,11 +4,11 @@
 [opcua-data-diode](https://github.com/cherubimro/opcua-data-diode), aimed at *formal proof* of the
 reconstruction path rather than parity with the Python original.
 
-> Status: **Phases 0–2 complete.** The proven core — GF(2⁸) arithmetic, a systematic Reed-Solomon
-> erasure code, and a UADP NetworkMessage **header parser** — is proved free of run-time errors by
-> `gnatprove`: **180 checks, 0 unproved, 0 justified**, with a byte-exact erasure round-trip and a
-> header-parse test (including truncation and lying length fields). The relay itself (dedup,
-> interleaving, transport) is the next phase.
+> Status: **Phase 3 proven core complete.** GF(2⁸), Reed-Solomon, the UADP header parser, the diode
+> framing, and the **relay logic** (protect + erasure-recover + dedup) are all proved free of run-time
+> errors by `gnatprove`: **316 checks, 0 unproved, 0 justified**, with an end-to-end round-trip test
+> (NetworkMessage → protect → drop up to M packets → recover byte-identical, plus dedup). The remaining
+> piece is the trusted UDP shell (sockets + scheduler).
 
 ## Why this design, and how it differs from the Python original
 
@@ -52,6 +52,9 @@ Reed-Solomon owns the middle rung and is what Phase 0+1 delivers.
 | `rs_matrix` | The frozen Cauchy generator matrix — every square submatrix invertible, which is *why* the code is MDS |
 | `rs` | Systematic RS: `Encode` (Cauchy matrix-vector) and `Decode` (Gauss-Jordan inversion over GF(2⁸)). `Decode` fails only if fewer than K fragments survive |
 | `uadp` | Proven parser of the UADP NetworkMessage header (Part 14 §7.2.4, Part 6 little-endian). A bounded cursor extracts the `SequenceNumber` (dedup) and PublisherId / WriterGroupId / DataSetWriterIds (routing); a truncated or malformed message yields `Valid => False`, never an out-of-bounds read. Payloads are left opaque |
+| `wire_types` | The one shared byte/scalar type (`U8`..`U64`), so a datagram is field elements or protocol bytes with no conversion |
+| `diode_wire` | Our own fixed 25-byte framing across the diode: proven `Serialize`/`Parse`, every field validated before it is trusted |
+| `relay` | `Protect` (NetworkMessage → K data + M parity diode packets) and `Collector`/`Offer` (regroup by stream, erasure-decode, reassemble, dedup). Fixed-capacity, allocation-free; a single-packet message is K=1 so repetition needs no special case |
 
 ## Build, test, prove
 
@@ -68,9 +71,9 @@ Toolchain: **GNAT 14.2.0 + gprbuild + gnatprove** (SPARK). `tools/env.sh` puts t
 - **Phase 0+1 — proven core** ✅ GF(2⁸) + Reed-Solomon, AoRTE-proved, round-trip tested.
 - **Phase 2 — UADP header parse** ✅ proven parse of the NetworkMessage/GroupHeader/PayloadHeader;
   `SequenceNumber` + routing-id extraction; opaque-payload passthrough; safe on truncated/hostile input.
-- **Phase 3 — the relay** sender (listen to PubSub, dedup, interleave, FEC, forward) and receiver
-  (FEC-decode, dedup, re-emit UADP), with the trusted transport shell (UDP; optionally the DPDK
-  bypass and LT transport from gnat-lt-pro).
+- **Phase 3 — the relay** ✅ *proven core*: `diode_wire` framing + `relay` (protect + erasure-recover +
+  dedup), round-trip tested. **Remaining**: the trusted UDP shell (sockets, main loop, interleaving
+  scheduler); optionally the DPDK bypass + LT transport from gnat-lt-pro.
 - **Phase 4 — encryption** AEAD from [SPARKNaCl](https://github.com/rod-chapman/SPARKNaCl) in the
   proven core.
 - **Phase 5 — assurance argument** the proven/trusted boundary, as in gnat-lt-pro's `ASSURANCE.md`.

@@ -8,8 +8,11 @@
 --  is index bounds, which follow from the K, M <= Max_* preconditions.
 
 with Rs_Matrix;
+with Wire_Types;
 
 package body Rs with SPARK_Mode => On is
+
+   use type Wire_Types.U8;
 
    --  Generator row of the fragment in slot S, for a code with K data columns
    --  and M parity rows.  Data slot (S <= K): the unit vector e_S -- data
