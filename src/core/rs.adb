@@ -2,7 +2,7 @@
 --  Copyright (C) 2026 Alin Anton
 --
 --  Reed-Solomon erasure code body.  Everything here is bounded: the matrices
---  are at most Max_K x Max_N (32 x 64) bytes, every loop is bounded by K, M or
+--  are at most Max_K x 2*Max_K (72 x 144) bytes, every loop is bounded by K, M or
 --  Len, and the only field operations are Gf256.Mul / Inv / xor -- all proved
 --  free of run-time errors in gf256.adb.  So the entire proof obligation here
 --  is index bounds, which follow from the K, M <= Max_* preconditions.
@@ -18,14 +18,15 @@ package body Rs with SPARK_Mode => On is
    --  and M parity rows.  Data slot (S <= K): the unit vector e_S -- data
    --  passes through verbatim.  Parity slot (S > K): row S-K of Cauchy, and
    --  1 <= S-K <= M <= Max_M makes that index provably valid.
-   function Gen (S, Col, K, M : Positive) return Byte
-     with Pre => Col <= K and then K <= Max_K and then M <= Max_M
-                 and then S <= K + M
+   function Gen (S : Slot_Range; Col : K_Range; K : K_Range; M : M_Range)
+      return Byte
+     with Pre => Col <= K and then S <= K + M
    is
    begin
       if S <= K then
          return (if S = Col then 1 else 0);
       else
+         --  S > K and S <= K+M, so 1 <= S-K <= M <= Max_M: a valid Cauchy row.
          return Rs_Matrix.Cauchy (S - K, Col);
       end if;
    end Gen;
@@ -35,8 +36,9 @@ package body Rs with SPARK_Mode => On is
    ------------
 
    procedure Encode
-     (K, M : Positive;
-      Len  : Frag_Len;
+     (K   : K_Range;
+      M   : M_Range;
+      Len : Frag_Len;
       Frags : in out Frag_Array)
    is
    begin
@@ -62,7 +64,8 @@ package body Rs with SPARK_Mode => On is
    ------------
 
    procedure Decode
-     (K, M    : Positive;
+     (K       : K_Range;
+      M       : M_Range;
       Len     : Frag_Len;
       Present : Present_Array;
       Frags   : in out Frag_Array;

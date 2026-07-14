@@ -27,7 +27,7 @@ package Secure with SPARK_Mode => On is
    Tag_Len   : constant := 16;   --  Poly1305 tag
    Overhead  : constant := Nonce_Len + Tag_Len;   --  28
 
-   Max_Plain : constant := 40000;
+   Max_Plain : constant := 65536;   --  a full UADP NetworkMessage
    Max_Blob  : constant := Max_Plain + Overhead;
 
    type Key_Bytes    is array (1 .. Key_Len)   of U8;

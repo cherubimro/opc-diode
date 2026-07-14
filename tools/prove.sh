@@ -5,4 +5,4 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$here/env.sh"
 cd "$here/.."
-gnatprove -P opc_diode.gpr --level=2 --no-subprojects --report=all "$@"
+gnatprove -P opc_diode.gpr --level=2 --steps=25000 --no-subprojects --report=all "$@"

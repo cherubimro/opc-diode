@@ -12,7 +12,7 @@
 --  Layout (little-endian, 25-byte header):
 --    0    magic 'O','D'
 --    2    version (=1)
---    3    scheme  (0 = Reed-Solomon; 1 = LT reserved)
+--    3    scheme  (0 = Reed-Solomon; other values reserved)
 --    4    stream_id   : U64  -- identifies one (publisher, writer-group) stream
 --    12   msg_seq     : U32  -- our per-stream message counter (dedup + grouping)
 --    16   msg_len     : U32  -- length of the reconstructed NetworkMessage
@@ -32,8 +32,11 @@ package Diode_Wire with SPARK_Mode => On is
    Magic1 : constant := 16#44#;   --  'D'
    Version : constant := 1;
 
+   --  The only transport scheme.  Reed-Solomon (K=72) covers the full UADP
+   --  NetworkMessage size range, so there is no second scheme; the byte stays
+   --  in the frame purely as a version/variant guard, and the receiver accepts
+   --  only Scheme_RS.
    Scheme_RS : constant U8 := 0;
-   Scheme_LT : constant U8 := 1;
 
    Header_Len  : constant := 25;
    Max_Payload : constant := 1400;             --  = Rs.Max_Len

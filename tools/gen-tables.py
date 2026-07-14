@@ -39,13 +39,14 @@ for a, b, c in itertools.islice(
         ok = False
         break
 
-# Cauchy: C(i,j) = 1/(x_i XOR y_j), x_i in 32..63, y_j in 0..31 (disjoint sets),
+# Cauchy: C(i,j) = 1/(x_i XOR y_j), y_j in 0..K-1, x_i in K..K+M-1 (disjoint sets),
 # so every square submatrix is invertible -> the erasure code is MDS.
-MAXK = MAXM = 32
-cauchy = [[inv((32 + i) ^ j) for j in range(MAXK)] for i in range(MAXM)]
+MAXK, MAXM = 72, 48
+assert MAXK + MAXM <= 256
+cauchy = [[inv((MAXK + i) ^ j) for j in range(MAXK)] for i in range(MAXM)]
 
 print(f"GF(2^8) poly=0x11D  self-check: {'OK' if ok else 'FAILED'}")
 print(f"exp[0..7] = {exp[:8]}")
 print(f"log[1..8] = {log[1:9]}")
-print(f"Cauchy[0][0]={cauchy[0][0]}  Cauchy[31][31]={cauchy[31][31]}")
+print(f"Cauchy[0][0]={cauchy[0][0]}  Cauchy[{MAXM-1}][{MAXK-1}]={cauchy[MAXM-1][MAXK-1]}")
 print("These feed gf256.adb (Exp_T/Log_T) and rs_matrix.ads (Cauchy).")

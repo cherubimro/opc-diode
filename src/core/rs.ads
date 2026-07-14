@@ -20,11 +20,16 @@
 --  receiver does no arithmetic at all -- the data fragments ARE the message.
 
 with Gf256; use Gf256;
+with Rs_Matrix;
 
 package Rs with SPARK_Mode => On is
 
-   Max_K   : constant := 32;      --  data fragments per message
-   Max_M   : constant := 32;      --  parity fragments per message
+   --  The Cauchy matrix (Rs_Matrix) is the single source of truth for the code
+   --  dimensions, so the index bounds the prover sees on Cauchy accesses are
+   --  the SAME constants as K_Range / M_Range below -- no cross-unit "48 = 48"
+   --  obligation to discharge.
+   Max_K   : constant := Rs_Matrix.Max_K;   --  data fragments (72; covers 64KB UADP)
+   Max_M   : constant := Rs_Matrix.Max_M;   --  parity fragments (48)
    Max_N   : constant := Max_K + Max_M;
    Max_Len : constant := 1400;    --  bytes per fragment (fits one UADP datagram)
 
@@ -40,22 +45,25 @@ package Rs with SPARK_Mode => On is
    --  Encode: given K data fragments (slots 1 .. K of Frags, each Len bytes),
    --  fill in the M parity fragments (slots K+1 .. K+M).  Data slots are left
    --  untouched, so the result is systematic.
+   --  K and M are the bounded index subtypes, so K + M <= Max_N is structural
+   --  (no overflow to prove, and the slot indices K+1 .. K+M are in range by
+   --  construction rather than by an arithmetic argument the prover must find).
    procedure Encode
-     (K, M : Positive;
-      Len  : Frag_Len;
-      Frags : in out Frag_Array)
-     with Pre => K <= Max_K and then M <= Max_M;
+     (K   : K_Range;
+      M   : M_Range;
+      Len : Frag_Len;
+      Frags : in out Frag_Array);
 
    --  Decode: Present (s) says whether fragment s arrived.  On success every
    --  data slot 1 .. K of Frags holds the original bytes (missing ones are
    --  reconstructed; ones that arrived are unchanged).  Ok is False iff fewer
    --  than K fragments arrived -- the only genuine failure, since any K suffice.
    procedure Decode
-     (K, M    : Positive;
+     (K       : K_Range;
+      M       : M_Range;
       Len     : Frag_Len;
       Present : Present_Array;
       Frags   : in out Frag_Array;
-      Ok      : out Boolean)
-     with Pre => K <= Max_K and then M <= Max_M;
+      Ok      : out Boolean);
 
 end Rs;

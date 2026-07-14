@@ -26,9 +26,11 @@ with Diode_Wire;
 package Relay with SPARK_Mode => On is
 
    --  Data bytes carried per fragment.  K = ceil(Msg_Len / Frag_Payload), so a
-   --  message up to Frag_Payload * Rs.Max_K bytes fits in one RS block.
+   --  message up to Frag_Payload * Rs.Max_K bytes fits in one RS block -- with
+   --  Max_K = 72 that is 72 KB, which covers a full UADP NetworkMessage (spec-
+   --  capped at 64 KB) plus the 28-byte encryption overhead.
    Frag_Payload : constant := 1024;
-   Max_Msg_Len  : constant := Frag_Payload * Rs.Max_K;   --  32768
+   Max_Msg_Len  : constant := Frag_Payload * Rs.Max_K;   --  73728
 
    subtype Msg_Byte_Count is Natural range 0 .. Max_Msg_Len;
    type Msg_Bytes is array (1 .. Max_Msg_Len) of Byte;
@@ -44,7 +46,8 @@ package Relay with SPARK_Mode => On is
 
    --  Frame one NetworkMessage (first Msg_Len bytes of Msg) into N_Out diode
    --  packets, M of them parity.  Ok is False only if Msg_Len is 0 or exceeds
-   --  Max_Msg_Len (a bulk message destined for the LT path, added later).
+   --  Max_Msg_Len -- which no UADP NetworkMessage can, so on this transport it
+   --  always succeeds.
    procedure Protect
      (Msg       : Msg_Bytes;
       Msg_Len   : Msg_Byte_Count;

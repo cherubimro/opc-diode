@@ -37,7 +37,7 @@ package body Relay with SPARK_Mode => On is
       Ok    := False;
 
       if Msg_Len = 0 or else Msg_Len > Max_Msg_Len then
-         return;                       --  empty, or bulk -> LT path (later)
+         return;                       --  empty, or larger than one RS block
       end if;
 
       --  Geometry: one chunk if it fits, else full 1024-byte chunks.  Both

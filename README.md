@@ -40,10 +40,12 @@ Two deliberate departures from the Python version, both about *not corrupting a 
 | Payload | Scheme | Why |
 |---|---|---|
 | **1 packet** (typical DataSetMessage) | interleaved **repetition** ×R, dedup on `SequenceNumber` | cheapest; interleaving spreads copies in time so a burst can't take all of them |
-| **2 … 32 packets** (medium messages) | **Reed-Solomon over GF(2⁸)** — this module | MDS: *any* K of K+M fragments reconstruct exactly. Optimal at small K, where a fountain code wastes overhead |
-| **bulk** (structure dumps) | **LT fountain** (reuse gnat-lt-pro) | efficient only at large K |
+| **2 … 72 fragments** (medium / large) | **Reed-Solomon over GF(2⁸)** — this module | MDS: *any* K of K+M fragments reconstruct exactly. Optimal across the whole OPC range |
+| **>32 KB** (up to the 64 KB UADP ceiling) | **Reed-Solomon, K up to 72** | still MDS-optimal, and it covers the *entire* range a UADP NetworkMessage can occupy |
 
-Reed-Solomon owns the middle rung and is what Phase 0+1 delivers.
+Reed-Solomon owns the whole range. There is no LT/fountain rung: a UADP NetworkMessage is spec-capped
+at 64 KB, which is exactly where RS is optimal and a fountain code (tuned for thousands of fragments)
+would only add overhead. So "large message" here means K up to 72, not a separate transport.
 
 The full assurance case — what is proven, what is trusted, the proof's assumptions, and how the
 trusted shell and the integrity/confidentiality gate are justified — is in

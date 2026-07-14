@@ -143,6 +143,7 @@ begin
       Trial (16, 8, 300, 8);
       Trial (10, 6, 1400, 6);     --  full fragment length
       Trial (1,  3, 50,  3);      --  pure replication (K=1): survive any 1 of 4
+      Trial (72, 16, 1024, 16);   --  max K (covers a 72 KB / 64 KB-UADP message)
    end;
 
    --  UADP NetworkMessage header parsing.  Build messages byte-by-byte and
@@ -335,8 +336,10 @@ begin
       Trial (1000,  2, 1, 2);     --  still K=1
       Trial (3000,  2, 2, 3);     --  K=3, drop 2
       Trial (10000, 4, 4, 4);     --  K=10, drop 4
-      Trial (32768, 6, 6, 5);     --  max message, K=32, drop 6
-      Trial (777,   3, 3, 6);     --  K=1, three copies, drop all but one
+      Trial (32768, 6, 6, 5);     --  K=32, drop 6
+      Trial (50000, 8, 8, 6);     --  >32KB: K=49, drop 8 (RS extension)
+      Trial (73728, 12, 12, 7);   --  max message, K=72, drop 12
+      Trial (777,   3, 3, 8);     --  K=1, three copies, drop all but one
 
       --  Dedup: two fully-redundant deliveries of the same message must yield
       --  exactly one recovery.

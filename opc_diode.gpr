@@ -34,7 +34,12 @@ project Opc_Diode is
    end Builder;
 
    package Prove is
-      for Proof_Switches ("Ada") use ("--level=2", "--report=all");
+      --  --steps raised from the level-2 default: the K=72 Reed-Solomon instance
+      --  makes the index/overflow VCs larger, and the provers need the extra
+      --  budget to close them (they do -- 0 unproved).  --no-subprojects keeps
+      --  the vendored, separately-proven SPARKNaCl out of our scope.
+      for Proof_Switches ("Ada") use
+        ("--level=2", "--steps=25000", "--no-subprojects", "--report=all");
    end Prove;
 
 end Opc_Diode;

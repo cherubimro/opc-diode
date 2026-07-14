@@ -7,7 +7,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$here/.."
 echo "=== build ==="; gprbuild -q -P opc_diode.gpr; echo ok
 echo "=== SPARK proof (expect 0 unproved) ==="
-gnatprove -q -P opc_diode.gpr --level=2 --no-subprojects --report=all >/dev/null
+gnatprove -q -P opc_diode.gpr --level=2 --steps=25000 --no-subprojects --report=all >/dev/null
 if grep -qE '(medium|high|low):' obj/gnatprove/gnatprove.out 2>/dev/null; then
   echo "UNPROVED checks remain:"; grep -E '(medium|high|low):' obj/gnatprove/gnatprove.out; exit 1
 fi
