@@ -2,3 +2,5 @@
 /bin/
 deps/sparknacl/obj/
 deps/sparknacl/lib/
+deps/s2opc/
+deps/dpdk/

@@ -73,7 +73,13 @@ project Opc_Diode is
               ("-O2", "-g", "-Wall", "-Wextra")
               & external_as_list ("DPDK_CFLAGS", " ");
          when "no" =>
-            null;
+            case With_Opcua is
+               when "none" => null;
+               when others =>
+                  for Default_Switches ("C") use
+                    ("-O2", "-g", "-Wall")
+                    & external_as_list ("OPCUA_CFLAGS", " ");
+            end case;
       end case;
    end Compiler;
 
@@ -86,7 +92,12 @@ project Opc_Diode is
             for Default_Switches ("Ada") use
               external_as_list ("DPDK_LIBS", " ");
          when "no" =>
-            null;
+            case With_Opcua is
+               when "none" => null;
+               when others =>
+                  for Default_Switches ("Ada") use
+                    external_as_list ("OPCUA_LIBS", " ");
+            end case;
       end case;
    end Linker;
 
