@@ -76,4 +76,24 @@ package Uadp with SPARK_Mode => On is
    --  out-of-bounds read.
    procedure Parse (Buf : Message; Len : Msg_Length; Info : out Header_Info);
 
+   --  Encode -- the mirror of Parse, for the high-side adapter.  Builds a UADP
+   --  NetworkMessage with one numeric PublisherId, a GroupHeader carrying the
+   --  WriterGroupId + SequenceNumber, and a PayloadHeader with one
+   --  DataSetWriterId, then appends the DataSetMessage payload VERBATIM (the C
+   --  OPC UA stack encodes the DataSet fields; we only frame them).  Ok is
+   --  False if the result would not fit in Max_Msg.  Total and bounded: it can
+   --  never write out of range.
+   procedure Encode
+     (Pub               : Pub_Kind;    --  numeric kinds only (Byte/U16/U32/U64)
+      Pub_Id            : U64;
+      Writer_Group_Id   : U16;
+      Sequence_Number   : U16;
+      Dataset_Writer_Id : U16;
+      Payload           : Message;     --  opaque DataSetMessage bytes
+      Payload_Len       : Msg_Length;
+      Buf               : out Message;
+      Len               : out Msg_Length;
+      Ok                : out Boolean)
+     with Pre => Pub in Pub_Byte .. Pub_U64;
+
 end Uadp;

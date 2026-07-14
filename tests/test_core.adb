@@ -256,6 +256,31 @@ begin
       B (200);                    --  claims 200 writers, provides none
       Uadp.Parse (M, Pos, Info);
       Check (not Info.Valid,                      "msg5 lying count rejected");
+
+      --  Encode -> Parse round-trip: what the adapter builds must parse back to
+      --  the same routing/dedup fields, for every numeric publisher kind.
+      declare
+         Pay : Uadp.Message := (others => 0);
+         Enc : Uadp.Message;
+         ELn : Uadp.Msg_Length;
+         Ok2 : Boolean;
+      begin
+         for I in 0 .. 9 loop Pay (I) := Uadp.U8 (I + 16#40#); end loop;
+         for Kind in Uadp.Pub_Byte .. Uadp.Pub_U64 loop
+            Uadp.Encode (Kind, 16#1234_5678#, 100, 7, 1000, Pay, 10,
+                         Enc, ELn, Ok2);
+            Check (Ok2, "encode ok");
+            Uadp.Parse (Enc, ELn, Info);
+            Check (Info.Valid and Info.Is_Data,        "enc/parse valid");
+            Check (Info.Pub = Kind,                    "enc pub kind");
+            Check (Info.Writer_Group_Id = 100
+                   and Info.Sequence_Number = 7,       "enc group+seq");
+            Check (Info.N_Writers = 1
+                   and Info.Writers (1) = 1000,        "enc writer id");
+            --  The opaque payload lands right after the header.
+            Check (Enc (Info.Consumed) = 16#40#,       "enc payload placed");
+         end loop;
+      end;
    end;
 
    --  End-to-end relay: NetworkMessage -> Protect -> drop up to M packets in

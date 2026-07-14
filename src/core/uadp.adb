@@ -252,4 +252,104 @@ package body Uadp with SPARK_Mode => On is
       Info.Valid    := Ok;
    end Parse;
 
+   ------------
+   -- Encode --
+   ------------
+
+   --  Bounded writers: each appends a field only if it fits, else sets Ok
+   --  False.  Once Ok is False it stays False, so one end check suffices.
+
+   procedure Put8
+     (Buf : in out Message; Cur : in out Msg_Length; Ok : in out Boolean;
+      V : U8)
+     with Pre  => Cur <= Max_Msg,
+          Post => Cur <= Max_Msg
+   is
+   begin
+      if Ok and then Cur < Max_Msg then
+         Buf (Cur) := V;
+         Cur := Cur + 1;
+      else
+         Ok := False;
+      end if;
+   end Put8;
+
+   procedure Put16
+     (Buf : in out Message; Cur : in out Msg_Length; Ok : in out Boolean;
+      V : U16)
+     with Pre  => Cur <= Max_Msg,
+          Post => Cur <= Max_Msg
+   is
+   begin
+      Put8 (Buf, Cur, Ok, U8 (V and 16#FF#));
+      Put8 (Buf, Cur, Ok, U8 (V / 256));
+   end Put16;
+
+   procedure Encode
+     (Pub               : Pub_Kind;
+      Pub_Id            : U64;
+      Writer_Group_Id   : U16;
+      Sequence_Number   : U16;
+      Dataset_Writer_Id : U16;
+      Payload           : Message;
+      Payload_Len       : Msg_Length;
+      Buf               : out Message;
+      Len               : out Msg_Length;
+      Ok                : out Boolean)
+   is
+      Cur : Msg_Length := 0;
+      Need_EF1 : constant Boolean := Pub /= Pub_Byte;
+      PType    : constant U8 :=
+        (case Pub is
+           when Pub_Byte => 0, when Pub_U16 => 1,
+           when Pub_U32  => 2, when others  => 3);   --  Pub_U64
+   begin
+      Buf := (others => 0);
+      Ok  := True;
+      Len := 0;
+
+      --  UADPFlags: v1 + PublisherId + GroupHeader + PayloadHeader, and
+      --  ExtendedFlags1 iff the publisher type is not the default Byte.
+      Put8 (Buf, Cur, Ok, (if Need_EF1 then 16#F1# else 16#71#));
+      if Need_EF1 then
+         Put8 (Buf, Cur, Ok, PType);          --  EF1 bits 0-2 = PublisherId type
+      end if;
+
+      --  PublisherId (1/2/4/8 bytes, little-endian).
+      case Pub is
+         when Pub_Byte => Put8 (Buf, Cur, Ok, U8 (Pub_Id and 16#FF#));
+         when Pub_U16  => Put16 (Buf, Cur, Ok, U16 (Pub_Id and 16#FFFF#));
+         when Pub_U32  =>
+            Put16 (Buf, Cur, Ok, U16 (Pub_Id and 16#FFFF#));
+            Put16 (Buf, Cur, Ok, U16 ((Pub_Id / 2 ** 16) and 16#FFFF#));
+         when others   =>                      --  Pub_U64
+            for K in 0 .. 3 loop
+               Put16 (Buf, Cur, Ok,
+                      U16 ((Pub_Id / (2 ** (16 * K))) and 16#FFFF#));
+            end loop;
+      end case;
+
+      --  GroupHeader: WriterGroupId + SequenceNumber.
+      Put8  (Buf, Cur, Ok, 16#09#);            --  GroupFlags: bits 0 and 3
+      Put16 (Buf, Cur, Ok, Writer_Group_Id);
+      Put16 (Buf, Cur, Ok, Sequence_Number);
+
+      --  PayloadHeader (DataSetMessage type): Count = 1, one DataSetWriterId.
+      Put8  (Buf, Cur, Ok, 1);
+      Put16 (Buf, Cur, Ok, Dataset_Writer_Id);
+
+      --  Opaque DataSetMessage payload.
+      for I in 1 .. Payload_Len loop
+         pragma Loop_Invariant (Cur <= Max_Msg);
+         pragma Loop_Invariant (I <= Max_Msg);
+         if I - 1 <= Max_Msg - 1 then
+            Put8 (Buf, Cur, Ok, Payload (I - 1));
+         else
+            Ok := False;
+         end if;
+      end loop;
+
+      Len := (if Ok then Cur else 0);
+   end Encode;
+
 end Uadp;
