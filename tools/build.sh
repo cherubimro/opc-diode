@@ -28,7 +28,17 @@ if [ "$WITH_OPCUA" = "s2opc" ]; then
     export OPCUA_CFLAGS OPCUA_LIBS
     echo "build.sh: OPC UA adapter ON (S2OPC, $S2)"
 elif [ "$WITH_OPCUA" = "open62541" ]; then
-    echo "build.sh: WITH_OPCUA=open62541 not yet wired" >&2; exit 1
+    UA="${OPEN62541_PREFIX:-$PWD/deps/open62541}"
+    [ -e "$UA/open62541.c" ] || { echo "build.sh: open62541 not at $UA (run tools/open62541-build.sh)" >&2; exit 1; }
+    #  Compile the 177k-line amalgamation to an object once, then reuse it.
+    if [ ! -e "$UA/open62541.o" ] || [ "$UA/open62541.c" -nt "$UA/open62541.o" ]; then
+        echo "build.sh: compiling open62541 amalgamation (once)..."
+        cc -O2 -w -c "$UA/open62541.c" -I"$UA" -o "$UA/open62541.o"
+    fi
+    OPCUA_CFLAGS="-I$UA"
+    OPCUA_LIBS="$UA/open62541.o -lpthread -lm"
+    export OPCUA_CFLAGS OPCUA_LIBS
+    echo "build.sh: OPC UA adapter ON (open62541, $UA)"
 fi
 
 if [ "$WITH_DPDK" = "yes" ]; then
