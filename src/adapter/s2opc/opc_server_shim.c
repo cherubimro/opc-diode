@@ -39,6 +39,9 @@ int od_srv_start(const char* server_cfg, const char* addr_space_cfg)
     if (g_ready) return 0;
     if (SOPC_CommonHelper_Initialize(NULL, NULL) != SOPC_STATUS_OK) return -1;
     if (SOPC_ServerConfigHelper_Initialize() != SOPC_STATUS_OK)     return -1;
+    /* NOTE: the address-space XML's server namespace (NamespaceArray[1]) must
+       equal the ApplicationUri in the server config XML, or ConfigureFromXML
+       fails -- see tests/s2opc-data/server_none.xml. */
     if (SOPC_ServerConfigHelper_ConfigureFromXML(server_cfg, addr_space_cfg,
                                                  NULL, NULL) != SOPC_STATUS_OK)
         return -1;

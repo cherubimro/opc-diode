@@ -1,0 +1,17 @@
+[2026/07/14 20:52:36.854] Common LOG START
+[2026/07/14 20:52:36.854] ClientSer LOG START
+[2026/07/14 20:52:36.854] PubSub LOG START
+[2026/07/14 20:52:36.854] Common LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:52:36.854] ClientSer LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:52:36.854] PubSub LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:52:36.855] Common LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:52:36.855] ClientSer LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:52:36.855] PubSub LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:52:36.855] ClientSer Common library DATE='2026-07-14' VERSION='1.7.3*' SIGNATURE='863e67bd0e31523352138c713d1e1b414e7bbb6f' DOCKER=''
+[2026/07/14 20:52:36.855] ClientSer Client/Server toolkit library DATE='2026-07-14' VERSION='1.7.3*' SIGNATURE='863e67bd0e31523352138c713d1e1b414e7bbb6f' DOCKER=''
+[2026/07/14 20:52:36.855] Common LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:52:36.855] ClientSer LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:52:36.855] PubSub LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:52:36.941] ClientSer (Error) Second value of node 'NamespaceArray': urn:S2OPC:localhost is not equal to ApplicationUri: urn:opc-diode:shadow. Server will stop.
+[2026/07/14 20:52:36.942] ClientSer (Error) Error loading address space configuration parsed from addrspace.xml. Error: 1
+

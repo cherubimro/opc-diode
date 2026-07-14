@@ -1,0 +1,30 @@
+[2026/07/14 20:51:27.398] Common LOG START
+[2026/07/14 20:51:27.398] ClientSer LOG START
+[2026/07/14 20:51:27.398] PubSub LOG START
+[2026/07/14 20:51:27.398] Common LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:51:27.398] ClientSer LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:51:27.398] PubSub LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:51:27.399] Common LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:51:27.399] ClientSer LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:51:27.399] PubSub LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:51:27.399] ClientSer Common library DATE='2026-07-14' VERSION='1.7.3*' SIGNATURE='863e67bd0e31523352138c713d1e1b414e7bbb6f' DOCKER=''
+[2026/07/14 20:51:27.399] ClientSer Client/Server toolkit library DATE='2026-07-14' VERSION='1.7.3*' SIGNATURE='863e67bd0e31523352138c713d1e1b414e7bbb6f' DOCKER=''
+[2026/07/14 20:51:27.399] Common LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:51:27.399] ClientSer LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:51:27.399] PubSub LOG LEVEL SET TO 'INFO'
+[2026/07/14 20:51:27.399] ClientSer (Warning) No client PKI configured
+[2026/07/14 20:51:27.399] ClientSer (Warning) No client certificate/key configured
+[2026/07/14 20:51:27.400] ClientSer Connected to [127.0.0.1]:4841 with socket socketIdx=1
+[2026/07/14 20:51:27.400] ClientSer Closed connection on [127.0.0.1]:4841 with socket socketIdx=1
+[2026/07/14 20:51:27.400] ClientSer (Warning) No client PKI configured
+[2026/07/14 20:51:27.400] ClientSer (Warning) No client certificate/key configured
+[2026/07/14 20:51:27.401] ClientSer Connected to [127.0.0.1]:4841 with socket socketIdx=1
+[2026/07/14 20:51:27.403] ClientSer msg_session_bs__create_session_resp_check_server_endpoints: no endpoint description in channel config 2 with the security policy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026/07/14 20:51:27.403] ClientSer Session activated.
+[2026/07/14 20:51:27.403] ClientSer Creating subscription using provided request.
+[2026/07/14 20:51:27.404] ClientSer Subscription 1 created.
+[2026/07/14 20:51:27.404] ClientSer Adding publish token.
+[2026/07/14 20:51:27.404] ClientSer Adding publish token.
+[2026/07/14 20:51:27.404] ClientSer Adding publish token.
+[2026/07/14 20:51:27.907] ClientSer PublishResponse received.
+[2026/07/14 20:51:27.907] ClientSer Adding publish token.

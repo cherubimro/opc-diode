@@ -1,0 +1,21 @@
+<?xml version='1.0' encoding='utf-8'?>
+<S2OPC xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="s2opc_clientserver_config.xsd">
+  <ServerConfiguration>
+    <Locales><Locale id="en-US"/></Locales>
+    <ApplicationDescription>
+      <ApplicationURI uri="urn:S2OPC:localhost"/>
+      <ProductURI uri="urn:opc-diode:product"/>
+      <ApplicationName text="opc-diode shadow server" locale="en-US"/>
+    </ApplicationDescription>
+    <Endpoints>
+      <Endpoint url="opc.tcp://localhost:4840">
+        <SecurityPolicies>
+          <SecurityPolicy uri="http://opcfoundation.org/UA/SecurityPolicy#None">
+            <SecurityModes><SecurityMode mode="None"/></SecurityModes>
+            <UserPolicies><UserPolicy policyId="anon" tokenType="anonymous"/></UserPolicies>
+          </SecurityPolicy>
+        </SecurityPolicies>
+      </Endpoint>
+    </Endpoints>
+  </ServerConfiguration>
+</S2OPC>
