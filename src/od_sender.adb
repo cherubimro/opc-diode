@@ -33,12 +33,20 @@ with Od_Stream;
 with Secure;
 with Od_Key;
 with Diode_Wire;
+with Od_Dpdk;
+with Ada.Strings.Unbounded;   use Ada.Strings.Unbounded;
 
 procedure Od_Sender with SPARK_Mode => Off is
 
    In_Sock, Out_Sock : Socket_Type;
    Parity  : Natural := 2;
    Pace_Us : Natural := 0;
+
+   --  DPDK kernel-bypass output (docs/ASSURANCE.md).  The publisher input stays
+   --  UDP; only the diode-side output changes.
+   Use_Dpdk : Boolean := False;
+   Eal_Args : Unbounded_String := Null_Unbounded_String;
+   Dst_Mac  : Unbounded_String := Null_Unbounded_String;
 
    Max_Interleave : constant := 16;
    Interleave     : Natural  := 1;   --  1 = no interleaving (send each at once)
@@ -96,6 +104,12 @@ begin
             Argi := Argi + 1; Pace_Us := Natural'Value (Argument (Argi));
          elsif Argument (Argi) = "--interleave" and then Argi < Argument_Count then
             Argi := Argi + 1; Interleave := Natural'Value (Argument (Argi));
+         elsif Argument (Argi) = "--with-dpdk" then
+            Use_Dpdk := True;
+         elsif Argument (Argi) = "--eal" and then Argi < Argument_Count then
+            Argi := Argi + 1; Eal_Args := To_Unbounded_String (Argument (Argi));
+         elsif Argument (Argi) = "--dst" and then Argi < Argument_Count then
+            Argi := Argi + 1; Dst_Mac := To_Unbounded_String (Argument (Argi));
          elsif Argument (Argi) = "--key" and then Argi < Argument_Count then
             Argi := Argi + 1;
             Od_Key.Parse_Hex (Argument (Argi), Key, Have_Key);
@@ -118,13 +132,38 @@ begin
       Bind_Socket (In_Sock,
         (Family => Family_Inet, Addr => Any_Inet_Addr, Port => In_Port));
 
-      Create_Socket (Out_Sock, Family_Inet, Socket_Datagram);
-      Connect_Socket (Out_Sock,
-        (Family => Family_Inet, Addr => Inet_Addr (Diode_IP), Port => Diode_Port));
+      if Use_Dpdk then
+         if not Od_Dpdk.Available then
+            Put_Line (Standard_Error,
+              "[od_sender] --with-dpdk given, but this binary was built without"
+              & " DPDK support.  Rebuild:  WITH_DPDK=yes ./tools/build.sh");
+            GNAT.OS_Lib.OS_Exit (2);
+         end if;
+         declare
+            Ok2 : Boolean;
+         begin
+            Od_Dpdk.Init (To_String (Eal_Args), Ok2);
+            if not Ok2 then
+               Put_Line (Standard_Error, "[od_sender] DPDK init failed");
+               GNAT.OS_Lib.OS_Exit (2);
+            end if;
+            if Dst_Mac /= Null_Unbounded_String then
+               Od_Dpdk.Set_Dst (To_String (Dst_Mac), Ok2);
+            end if;
+            Od_Dpdk.Wait_Link (5_000, Ok2);   --  best-effort; TX drops if down
+         end;
+      else
+         Create_Socket (Out_Sock, Family_Inet, Socket_Datagram);
+         Connect_Socket (Out_Sock,
+           (Family => Family_Inet, Addr => Inet_Addr (Diode_IP),
+            Port => Diode_Port));
+      end if;
 
       Put_Line (Standard_Error,
-        "[od_sender] in=" & Argument (1) & " -> diode " & Diode_IP & ":"
-        & Argument (3) & "  parity=" & Parity'Image & "  interleave=" & Interleave'Image
+        "[od_sender] in=" & Argument (1)
+        & (if Use_Dpdk then " -> diode via DPDK (EtherType 0x88B7)"
+           else " -> diode " & Diode_IP & ":" & Argument (3))
+        & "  parity=" & Parity'Image & "  interleave=" & Interleave'Image
         & (if Have_Key then "  encrypted" else "  cleartext"));
    end;
 
@@ -145,13 +184,20 @@ begin
    NJobs : Natural := 0;
 
    procedure Emit (P : Diode_Wire.Packet; L : Natural) is
-      OB : Stream_Element_Array (1 .. Stream_Element_Offset (L));
-      OL : Stream_Element_Offset;
    begin
-      for J in 1 .. L loop
-         OB (Stream_Element_Offset (J)) := Stream_Element (P (J - 1));
-      end loop;
-      Send_Socket (Out_Sock, OB, OL);
+      if Use_Dpdk then
+         Od_Dpdk.Tx (P, L);
+      else
+         declare
+            OB : Stream_Element_Array (1 .. Stream_Element_Offset (L));
+            OL : Stream_Element_Offset;
+         begin
+            for J in 1 .. L loop
+               OB (Stream_Element_Offset (J)) := Stream_Element (P (J - 1));
+            end loop;
+            Send_Socket (Out_Sock, OB, OL);
+         end;
+      end if;
       if Pace_Us > 0 then
          delay Duration (Pace_Us) / 1_000_000.0;
       end if;

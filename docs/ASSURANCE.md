@@ -42,7 +42,7 @@ The system is two layers with a single, narrow interface between them.
 | Layer | Files | `SPARK_Mode` | Status |
 |---|---|---|---|
 | **Proven core** | `src/core/*` (`wire_types`, `gf256`, `rs_matrix`, `rs`, `uadp`, `diode_wire`, `relay`, `secure`) and `src/od_stream` | `On` | proved by `gnatprove` |
-| **Trusted I/O shell** | `src/{od_sender,od_receiver,od_key}` | `Off` | reviewed |
+| **Trusted I/O shell** | `src/{od_sender,od_receiver,od_key}`, `src/net/od_dpdk` (+ the C shim, DPDK build only) | `Off` | reviewed |
 | **Proven dependency** | `deps/sparknacl/*` | `On` (upstream) | proved upstream; relied upon (§4) |
 
 The core is **self-contained and allocation-free**: it operates on
@@ -60,23 +60,29 @@ Diode_Wire.Serialize / Parse (...)              -- our on-wire framing
 Rs.Encode / Decode (...)                        -- the erasure code
 ```
 
-That is the entire interface. Roughly **1815 lines** of proven core sit behind
-it; the trusted shell is **~430 lines** of socket plumbing.
+That is the entire interface. Roughly **2065 lines** of proven core sit behind
+it; the trusted shell is **~700 lines** of socket/transport plumbing (plus the
+optional DPDK shim, §5.1).
 
 ## 3. What the proof establishes
 
-`gnatprove` (level 2) over the core discharges **351 verification conditions,
-0 unproved, 0 justified**:
+`gnatprove` (level 2, `--steps=25000`) over the core discharges **350
+verification conditions, 0 unproved, 0 justified**:
 
-- **Run-time checks** (173) — no overflow, no array index or range violation,
+- **Run-time checks** (171) — no overflow, no array index or range violation,
   no division by zero, anywhere in the core, on any input including a hostile
   UDP datagram.
 - **Assertions & functional contracts** (104) — the pre/postconditions,
   including `Diode_Wire.Parse`'s postcondition that hands validated field bounds
-  to the relay, and the length relations in `Secure`.
-- **Loop termination** (15) — every loop, including the Gauss-Jordan erasure
-  decode and the UADP cursor.
+  to the relay, the anti-replay window arithmetic, and the length relations in
+  `Secure`.
+- **Loop termination** (16) — every loop, including the Gauss-Jordan erasure
+  decode, the UADP cursor and the anti-replay window slide.
 - **Initialization & non-aliasing** (59) — no read of an uninitialized value.
+
+(The `--steps` budget is raised from the level-2 default because the K=72
+Reed-Solomon instance makes the index/overflow VCs larger; nothing is justified
+or assumed to close them.)
 
 Reproduce with `./tools/prove.sh` (or `./tools/check.sh`, which fails the build
 if any obligation is unproved).
@@ -130,8 +136,10 @@ kept explicit and minimal:
    SPARKNaCl's AEAD preconditions (0-based, equal lengths, size < 2³¹) are
    discharged inside `secure` by the marshalling (proved).
 5. **Analyzed instance and representation.** The relay is proved with its
-   concrete capacities (`Max_K = Max_M = 32`, `Max_Inflight = 16`,
-   `Dedup_Depth = 64`); over-capacity input is dropped, never overflows. The GF
+   concrete capacities (`Max_K = 72`, `Max_M = 48`, `Max_Inflight = 16`,
+   `Max_Streams = 64`, `Replay_Win = 1024`); over-capacity input is dropped,
+   never overflows. `Max_K = 72` at 1024 bytes/fragment covers a full 64 KB UADP
+   NetworkMessage plus the encryption overhead. The GF
    tables and Cauchy matrix are frozen constants, generated and self-checked
    offline (`tools/gen-tables.py`) and pasted into the Ada, not built at
    elaboration — so there is no initialization loop to reason about, and a human
@@ -162,9 +170,41 @@ The trusted side is justified by three means:
    preconditions, met by construction (§4.4). `od_stream`, though it lives with
    the shell, is itself proven.
 3. **Exercised end-to-end.** `tools/loopback-test.sh` runs the whole pipeline
-   over real UDP in three passes — cleartext, encrypted, and encrypted with a
-   *wrong* key — and asserts byte-identical delivery for the first two and
-   **zero** delivery for the third (every forged-key blob rejected by the tag).
+   over real UDP in four passes — cleartext, encrypted, encrypted with a *wrong*
+   key, and encrypted + interleaved — and asserts byte-identical delivery for the
+   valid passes and **zero** delivery for the wrong-key pass (every forged-key
+   blob rejected by the tag).
+
+### 5.1 Transport is a trusted-shell choice — and DPDK is a TCB trade
+
+The proven core's whole input contract is a `Diode_Wire.Packet` buffer, so it
+never names a socket: **which mechanism carries a diode packet is a property of
+the trusted shell alone, and swapping it re-discharges none of the 350 proof
+obligations.** Two transports exist, chosen at build time and selected at run
+time:
+
+- **Kernel / UDP (default).** `GNAT.Sockets` on both ends. The trusted surface is
+  the §5 table — a few kernel-bounded syscalls. This is the assurance-maximal
+  configuration.
+- **DPDK poll-mode (opt-in).** Built with `WITH_DPDK=yes`, selected with
+  `--with-dpdk`; a userspace driver moves diode packets as raw Ethernet frames
+  (EtherType `0x88B7`). A default build compiles no C, links no DPDK, and `nm`
+  finds **zero `rte_*` symbols**; `--with-dpdk` on such a binary exits 2. So the
+  opt-in is real — DPDK cannot enter the TCB by accident.
+
+DPDK's data-path API is `static inline` and exports no linkable symbol, so the
+backend carries a small **C shim** (`src/net/dpdk/od_dpdk_shim.c`) exposing
+non-inline wrappers. It is written so mbuf lifetime never escapes C (RX copies
+out and frees; TX allocates, fills, frees on refusal), so Ada never holds a DPDK
+pointer, and it filters non-diode frames so Ada sees only well-formed candidates
+— the same discipline gnat-lt-pro uses. It does **not** weaken the safety or
+integrity claim: the core is still proved, and the authentication gate still
+drops a bad decode. What it changes is the **trusted** side of the ledger: it
+moves DPDK's EAL, mempool and NIC PMD — a large third-party C body — plus the
+shim onto the data path, inside the TCB, and real kernel bypass (`vfio-pci`)
+additionally needs root, an IOMMU and a spare NIC. That is a genuine assurance
+regression, recorded here as one (§7). The kernel path stays the default; the
+DPDK path is for a controlled link whose operator accepts DPDK in the TCB.
 
 ## 6. Integrity and confidentiality — safe degradation
 
@@ -218,13 +258,22 @@ erasure decode succeeding, and the link is assumed physically one-way.)
   collide. Mitigation path: a higher-entropy epoch (e.g. from the OS RNG).
 - **Key management is out of band.** The pre-shared key is supplied on the
   command line; distributing and protecting it is the operator's responsibility.
+- **The optional DPDK transport enlarges the TCB** (§5.1). When `--with-dpdk` is
+  used, DPDK's EAL, mempool and NIC PMD plus the C shim are trusted, unproved,
+  and on the data path; real bypass also raises the privilege/hardware envelope
+  (root, IOMMU, a bound NIC). The default (kernel/UDP) build carries none of
+  this. Safety and integrity are unchanged; the *size of what is trusted* is not.
 
 ## 8. Reproducing the evidence
 
 ```sh
-./tools/prove.sh          # gnatprove: 351 checks, 0 unproved, 0 justified
+./tools/prove.sh          # gnatprove: 350 checks, 0 unproved, 0 justified
 ./tools/check.sh          # build + proof + core sanity + end-to-end loopback
-./tools/loopback-test.sh  # cleartext + encrypted + wrong-key over real UDP
+./tools/loopback-test.sh  # cleartext + encrypted + wrong-key + interleaved (UDP)
+
+# the optional DPDK transport (off unless asked):
+DPDK_PREFIX=... WITH_DPDK=yes ./tools/build.sh
+./tools/dpdk-test.sh      # DPDK code path over memif -- no root, no NIC
 ```
 
 The assurance case is the composition of all three: **a proof that the whole

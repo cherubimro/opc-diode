@@ -4,12 +4,14 @@
 [opcua-data-diode](https://github.com/cherubimro/opcua-data-diode), aimed at *formal proof* of the
 reconstruction path rather than parity with the Python original.
 
-> Status: **Phases 0–5 complete — a working, proven, encrypted relay with a written assurance case.**
-> The proven core (GF(2⁸), Reed-Solomon, UADP header parse, diode framing, protect + erasure-recover +
-> dedup, ChaCha20-Poly1305 AEAD) is AoRTE-clean: **351 checks, 0 unproved, 0 justified** (SPARKNaCl
-> provides the crypto, separately proven). The trusted UDP shell moves real NetworkMessages
-> end-to-end byte-identical, cleartext or authenticated-encrypted; a wrong key or any tampering is
-> dropped, never emitted. The full assurance case is [`docs/ASSURANCE.md`](docs/ASSURANCE.md).
+> Status: **Complete and hardened.** GF(2^8), Reed-Solomon (K up to 72, covering the full 64 KB UADP
+> range), UADP header parse, diode framing, protect + erasure-recover + dedup, a per-stream anti-replay
+> window, and ChaCha20-Poly1305 AEAD are all proved AoRTE by `gnatprove`: **350 checks, 0 unproved, 0
+> justified** (SPARKNaCl provides the crypto, separately proven). The trusted UDP shell moves real
+> NetworkMessages end-to-end byte-identical -- cleartext or authenticated-encrypted, with a
+> cross-message interleaving scheduler for burst-loss resilience; a wrong key or tampering is dropped.
+> An **optional DPDK kernel-bypass transport** is available behind `WITH_DPDK` / `--with-dpdk`. The full
+> assurance case is [`docs/ASSURANCE.md`](docs/ASSURANCE.md).
 
 ## Why this design, and how it differs from the Python original
 
@@ -88,9 +90,33 @@ Toolchain: **GNAT 14.2.0 + gprbuild + gnatprove** (SPARK). `tools/env.sh` puts t
 Add `--key <64 hex chars>` to BOTH ends for authenticated encryption (ChaCha20-Poly1305). The key is
 pre-shared out of band; the sender encrypts each NetworkMessage before fragmenting, the receiver
 verifies the tag and drops anything that fails. Without `--key`, payloads cross in the clear.
+`--interleave D` on the sender spreads a burst loss across D messages (packet 1 of each, then packet 2
+of each, …), so a short burst becomes a recoverable one-per-message trickle.
 
 The publisher points its PubSub output at the sender's `9701`; subscribers listen on the receiver's
 `9703`. One-way throughout: nothing flows back.
+
+### Transports: UDP (default) or DPDK kernel-bypass (opt-in)
+
+The proven core takes a fixed packet buffer and never names a socket, so the transport lives wholly in
+the trusted shell — **swapping it re-discharges none of the 350 proof obligations.** The default is
+`GNAT.Sockets` UDP. An optional DPDK poll-mode backend moves diode packets as raw Ethernet frames
+(EtherType `0x88B7`):
+
+```sh
+DPDK_PREFIX=/path/to/dpdk-install WITH_DPDK=yes ./tools/build.sh   # or apt install libdpdk-dev
+./tools/dpdk-test.sh                                               # memif end-to-end, no root/NIC
+
+# then --with-dpdk --eal "<EAL args>" on BOTH the sender (diode output) and receiver (diode input)
+sudo ./bin/od_receiver 0 127.0.0.1 9703 --with-dpdk --eal "-l 0 -a 0000:03:00.0"
+sudo ./bin/od_sender 9701 0 0 --with-dpdk --eal "-l 1 -a 0000:03:00.0" --parity 3
+```
+
+A default build is DPDK-free (`nm` finds zero `rte_*` symbols); `--with-dpdk` on it exits with *"built
+without DPDK support"*. **The trade:** DPDK moves its EAL, mempool and NIC PMD — a large third-party C
+body — plus a small mandatory C shim onto the data path *inside the TCB*, and real bypass (`vfio-pci`)
+also needs root, an IOMMU and a spare NIC. Safety and integrity are unaffected; what grows is what you
+**trust**. Full ledger: [`docs/ASSURANCE.md` §5.1](docs/ASSURANCE.md).
 
 ## Roadmap
 
@@ -98,16 +124,17 @@ The publisher points its PubSub output at the sender's `9701`; subscribers liste
 - **Phase 2 — UADP header parse** ✅ proven parse of the NetworkMessage/GroupHeader/PayloadHeader;
   `SequenceNumber` + routing-id extraction; opaque-payload passthrough; safe on truncated/hostile input.
 - **Phase 3 — the relay** ✅ proven core (`diode_wire` + `relay`) **plus** the trusted UDP shell
-  (`od_sender` / `od_receiver` / `od_stream`); works end-to-end byte-identical. *Refinements left*: a
-  cross-message interleaving scheduler (today: simple pacing), and optionally the DPDK bypass + LT
-  transport from gnat-lt-pro for the bulk rung.
+  (`od_sender` / `od_receiver` / `od_stream`); works end-to-end byte-identical.
 - **Phase 4 — encryption** ✅ ChaCha20-Poly1305 AEAD ([SPARKNaCl](https://github.com/rod-chapman/SPARKNaCl),
   vendored under `deps/`, BSD) wrapped by the proven `secure` module; wired into the shell via
   `--key`. Encrypt-then-fragment, so RS protects the ciphertext; a bad tag is dropped, never emitted.
 - **Phase 5 — assurance argument** ✅ [`docs/ASSURANCE.md`](docs/ASSURANCE.md): the claim, the
-  proven/trusted boundary, what the 351-check proof does and does not establish, the TCB (incl. the
+  proven/trusted boundary, what the 350-check proof does and does not establish, the TCB (incl. the
   SPARKNaCl reliance), how the trusted shell is justified, the integrity/confidentiality gate, and
-  the residual risks (availability, replay, nonce uniqueness, key management).
+  the residual risks.
+- **Hardening** ✅ RS extended to K=72 (the full 64 KB UADP range, LT unneeded); a per-stream
+  anti-replay window; a cross-message interleaving scheduler; and an optional DPDK kernel-bypass
+  transport (`WITH_DPDK` / `--with-dpdk`).
 
 ## Vendored dependency
 
