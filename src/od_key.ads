@@ -4,7 +4,8 @@
 --  Od_Key -- key material handling for the trusted shell (not proven).
 --
 --  Parses a 32-byte symmetric key from 64 hex characters, and supplies a
---  per-run nonce epoch.  Trusted: it only marshals bytes and reads the clock.
+--  per-run random nonce salt.  Trusted: it only marshals bytes and reads the
+--  OS entropy source.
 
 with Wire_Types; use Wire_Types;
 with Secure;
@@ -15,8 +16,12 @@ package Od_Key with SPARK_Mode => Off is
    --  length or a non-hex character.
    procedure Parse_Hex (S : String; Key : out Secure.Key_Bytes; Ok : out Boolean);
 
-   --  A value that differs between runs of the process, used as the high 32
-   --  bits of every nonce so a restart cannot reuse a (stream, msg_seq) nonce.
-   function Run_Epoch return U32;
+   --  A per-run random 32-bit value from the OS CSPRNG (getrandom(2), or
+   --  /dev/urandom, or a clock/PID mix as a last resort).  It forms the high 4
+   --  bytes of every nonce, so two runs cannot collide a nonce even if started
+   --  in the same clock tick.  Combined with a strictly-increasing per-run
+   --  message counter (the low 8 bytes), this makes ChaCha20-Poly1305 nonce
+   --  reuse under one key negligible.
+   function Random_Salt return U32;
 
 end Od_Key;

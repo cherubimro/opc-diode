@@ -251,11 +251,14 @@ erasure decode succeeding, and the link is assumed physically one-way.)
   -- and the stream table is bounded (`Max_Streams = 64`, LRU), so replaying on
   a stream that has been evicted resets its window. Tested (`test_core`: an old
   message replayed in full is rejected; a genuinely new one still passes).
-- **Nonce uniqueness is an assumption, not a proof.** Confidentiality of
-  ChaCha20-Poly1305 requires the `(epoch, stream_id, msg_seq)` nonce never to
-  repeat under one key. `epoch` is clock-derived per run; two sender processes
-  started within the same clock tick, on the same stream, could in principle
-  collide. Mitigation path: a higher-entropy epoch (e.g. from the OS RNG).
+- **Nonce uniqueness.** Confidentiality of ChaCha20-Poly1305 requires the nonce
+  never to repeat under one key. The nonce is `Salt (4 bytes) || counter (8
+  bytes)`: the counter is a strictly-increasing per-run message counter, so no
+  nonce repeats *within* a run regardless of stream, and `Salt` comes from the
+  OS CSPRNG (`getrandom(2)`, falling back to `/dev/urandom`), so two runs
+  collide with probability ~2⁻³² per pair. This is a design property, not a
+  proof obligation; the residual is the 32-bit salt birthday bound across a very
+  large number of restarts, which a wider salt would shrink further.
 - **Key management is out of band.** The pre-shared key is supplied on the
   command line; distributing and protecting it is the operator's responsibility.
 - **The optional DPDK transport enlarges the TCB** (§5.1). When `--with-dpdk` is

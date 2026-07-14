@@ -53,7 +53,13 @@ procedure Od_Sender with SPARK_Mode => Off is
 
    Have_Key : Boolean := False;
    Key      : Secure.Key_Bytes := (others => 0);
-   Epoch    : U32 := 0;         --  per-run nonce prefix (unique across restarts)
+
+   --  Nonce = Salt (4 random bytes, per run) || Nonce_Ctr (8 bytes, a strictly
+   --  increasing per-run message counter).  The counter guarantees uniqueness
+   --  within a run without depending on the stream id (so no truncation
+   --  collision); the random salt makes cross-run collision negligible.
+   Salt      : U32 := 0;
+   Nonce_Ctr : U64 := 0;
 
    --  Per-stream monotonic message counters (small fixed table).
    Max_Streams : constant := 64;
@@ -125,7 +131,7 @@ begin
       if Parity > Rs.Max_M then Parity := Rs.Max_M; end if;
       if Interleave < 1 then Interleave := 1; end if;
       if Interleave > Max_Interleave then Interleave := Max_Interleave; end if;
-      if Have_Key then Epoch := Od_Key.Run_Epoch; end if;
+      if Have_Key then Salt := Od_Key.Random_Salt; end if;
 
       Create_Socket (In_Sock, Family_Inet, Socket_Datagram);
       Set_Socket_Option (In_Sock, Socket_Level, (Reuse_Address, True));
@@ -247,18 +253,17 @@ begin
                Nonce : Secure.Nonce_Bytes := (others => 0);
             begin
                for I in 1 .. L loop Plain (I) := Msg (I); end loop;
-               Nonce (1) := U8 (Epoch and 16#FF#);
-               Nonce (2) := U8 ((Epoch / 2 ** 8) and 16#FF#);
-               Nonce (3) := U8 ((Epoch / 2 ** 16) and 16#FF#);
-               Nonce (4) := U8 ((Epoch / 2 ** 24) and 16#FF#);
-               Nonce (5) := U8 (SID and 16#FF#);
-               Nonce (6) := U8 ((SID / 2 ** 8) and 16#FF#);
-               Nonce (7) := U8 ((SID / 2 ** 16) and 16#FF#);
-               Nonce (8) := U8 ((SID / 2 ** 24) and 16#FF#);
-               Nonce (9)  := U8 (Seq and 16#FF#);
-               Nonce (10) := U8 ((Seq / 2 ** 8) and 16#FF#);
-               Nonce (11) := U8 ((Seq / 2 ** 16) and 16#FF#);
-               Nonce (12) := U8 ((Seq / 2 ** 24) and 16#FF#);
+               --  nonce = Salt (4) || Nonce_Ctr (8), both little-endian.  The
+               --  counter is bumped for every sealed message, so no nonce ever
+               --  repeats within this run.
+               Nonce_Ctr := Nonce_Ctr + 1;
+               Nonce (1) := U8 (Salt and 16#FF#);
+               Nonce (2) := U8 ((Salt / 2 ** 8) and 16#FF#);
+               Nonce (3) := U8 ((Salt / 2 ** 16) and 16#FF#);
+               Nonce (4) := U8 ((Salt / 2 ** 24) and 16#FF#);
+               for K in 0 .. 7 loop
+                  Nonce (5 + K) := U8 ((Nonce_Ctr / (2 ** (8 * K))) and 16#FF#);
+               end loop;
                Secure.Seal (Plain, L, Key, Nonce, Blob, BLen);
                for I in 1 .. BLen loop Msg (I) := Blob (I); end loop;
                R_Len := BLen;
