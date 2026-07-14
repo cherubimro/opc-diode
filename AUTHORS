@@ -1,0 +1,17 @@
+opc-diode — AUTHORS
+
+Author:
+  Alin-Adrian Anton  <alin.anton@upt.ro>
+  Politehnica University of Timișoara
+
+Prior work:
+  opcua-data-diode — the Python OPC UA data-diode this project reimplements.
+  https://github.com/cherubimro/opcua-data-diode
+  opc-diode is a clean-slate Ada/SPARK rewrite: the reconstruction path is
+  proved free of run-time errors rather than reimplemented for parity.
+
+This project is licensed under the GNU AGPL-3.0-or-later; every source file
+carries the SPDX header.  See LICENSE.
+
+Third-party components keep their own licences; see the "Third-party
+components" table in README.md.

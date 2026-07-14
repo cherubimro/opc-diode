@@ -143,7 +143,8 @@ also needs root, an IOMMU and a spare NIC. Safety and integrity are unaffected; 
 ## Licence
 
 opc-diode is **AGPL-3.0-or-later** ([`LICENSE`](LICENSE); every source file carries the SPDX header).
-Copyright © 2026 Alin Anton.
+Copyright © 2026 **Alin-Adrian Anton** (alin.anton@upt.ro), Politehnica University of Timișoara.
+See [`AUTHORS`](AUTHORS).
 
 ### Third-party components
 
