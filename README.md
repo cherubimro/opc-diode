@@ -136,9 +136,23 @@ also needs root, an IOMMU and a spare NIC. Safety and integrity are unaffected; 
   anti-replay window; a cross-message interleaving scheduler; and an optional DPDK kernel-bypass
   transport (`WITH_DPDK` / `--with-dpdk`).
 
-## Vendored dependency
+## Licence
 
-`deps/sparknacl/` is [SPARKNaCl](https://github.com/rod-chapman/SPARKNaCl) (© Protean Code Limited,
-BSD licence, retained in `deps/sparknacl/LICENCE.md`), used for the ChaCha20-Poly1305 AEAD. It is a
-separately-proven library; our `tools/prove.sh` runs with `--no-subprojects`, so we rely on its
-published proof rather than re-verifying it.
+opc-diode is **AGPL-3.0-or-later** ([`LICENSE`](LICENSE); every source file carries the SPDX header).
+Copyright © 2026 Alin Anton.
+
+### Third-party components
+
+Own licences apply to the optional, separately-built dependencies. Each is used only when its build
+flag is set; a default build links none of them.
+
+| Component | Licence | Used by | Vendored |
+|---|---|---|---|
+| [SPARKNaCl](https://github.com/rod-chapman/SPARKNaCl) | BSD (© Protean Code Ltd) | ChaCha20-Poly1305 AEAD (always) | `deps/sparknacl/` (`LICENCE.md` kept) |
+| [S2OPC](https://gitlab.com/systerel/S2OPC) | Apache-2.0 (© Systerel) | `WITH_OPCUA=s2opc` | built into `deps/s2opc/` (gitignored) |
+| [open62541](https://github.com/open62541/open62541) | MPL-2.0 | `WITH_OPCUA=open62541` | built into `deps/open62541/` (gitignored) |
+
+SPARKNaCl (BSD) and S2OPC / open62541 (Apache-2.0 / MPL-2.0, file-level copyleft) are all
+AGPL-compatible; their notices are retained in their vendored trees, and `tools/*-build.sh` reproduce
+them from source. The S2OPC and open62541 trees are gitignored — this repository distributes no
+third-party binaries.
