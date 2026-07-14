@@ -109,12 +109,25 @@ int od_s2opc_init(const char* endpoint)
     if (SOPC_CommonHelper_Initialize(NULL, NULL) != SOPC_STATUS_OK) return -1;
     if (SOPC_ClientConfigHelper_Initialize() != SOPC_STATUS_OK)     return -1;
 
+    /* An application description is required before a secure channel is set up. */
+    if (SOPC_ClientConfigHelper_SetApplicationDescription(
+            "urn:opc-diode:adapter", "urn:opc-diode",
+            "opc-diode adapter", "en", OpcUa_ApplicationType_Client)
+        != SOPC_STATUS_OK) return -1;
+
+    /* None security, anonymous user.  Note the two easy traps: the policy is the
+       SOPC_SecurityPolicy_URI enum value SOPC_SecurityPolicy_None (NOT the
+       _None_ID of the other enum), and UpdateUserPolicyId must follow SetAnonymous
+       so the user token matches the server's advertised policy -- without it the
+       server closes the session. */
     g_cfg = SOPC_ClientConfigHelper_CreateSecureConnection(
                 "od-adapter", endpoint,
-                OpcUa_MessageSecurityMode_None, SOPC_SecurityPolicy_None_ID);
+                OpcUa_MessageSecurityMode_None, SOPC_SecurityPolicy_None);
     if (g_cfg == NULL) return -1;
     if (SOPC_SecureConnectionConfig_SetAnonymous(g_cfg, "anonymous")
             != SOPC_STATUS_OK) return -1;
+    if (SOPC_SecureConnectionConfig_UpdateUserPolicyId(g_cfg) != SOPC_STATUS_OK)
+        return -1;
 
     if (SOPC_ClientHelper_Connect(g_cfg, conn_event_cb, &g_conn)
             != SOPC_STATUS_OK) return -1;

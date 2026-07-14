@@ -61,6 +61,10 @@ project Opc_Diode is
    for Main        use ("test_core.adb", "od_sender.adb", "od_receiver.adb",
                         "od_probe.adb", "od_adapter.adb", "od_shadow.adb");
 
+   --  Test-only OPC UA tools: they are compiled standalone against open62541 by
+   --  tools/opcua-test.sh, not by this project (whose C flags follow WITH_OPCUA).
+   for Excluded_Source_Files use ("opcua_source.c", "opcua_read.c");
+
    package Compiler is
       --  Assertions off at run time: the SPARK contracts are discharged
       --  statically by gnatprove (tools/prove.sh), not re-checked at run time.
