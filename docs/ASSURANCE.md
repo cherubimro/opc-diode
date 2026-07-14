@@ -202,12 +202,15 @@ erasure decode succeeding, and the link is assumed physically one-way.)
   cross-message interleaving scheduler (today the sender only paces), and the LT
   transport for messages larger than 32 KB (currently such a message is
   dropped by `Relay.Protect`, reported honestly by `Ok => False`).
-- **Replay.** The dedup ring is bounded (`Dedup_Depth = 64`). An attacker on the
-  low side who records diode packets and replays them *after* their
-  `(stream, msg_seq)` has aged out of the ring could cause a stale-but-authentic
-  NetworkMessage to be re-published. The AEAD tag passes because the ciphertext
-  is genuine. Mitigation path (not yet implemented): a per-stream monotonic
-  high-water `msg_seq`, rejecting any non-advancing sequence.
+- **Replay is defended, within a window.** Each stream carries a sliding
+  anti-replay window (`Replay_Win = 1024`, RFC 6479 style): a msg_seq that has
+  been delivered, or that trails the window's edge, is dropped, so a recorded
+  diode packet cannot be replayed to re-publish a stale NetworkMessage. Two
+  residual limits: an attacker can still replay a packet whose message is
+  *in-flight* (not yet delivered) -- harmless, it only adds a duplicate fragment
+  -- and the stream table is bounded (`Max_Streams = 64`, LRU), so replaying on
+  a stream that has been evicted resets its window. Tested (`test_core`: an old
+  message replayed in full is rejected; a genuinely new one still passes).
 - **Nonce uniqueness is an assumption, not a proof.** Confidentiality of
   ChaCha20-Poly1305 requires the `(epoch, stream_id, msg_seq)` nonce never to
   repeat under one key. `epoch` is clock-derived per run; two sender processes

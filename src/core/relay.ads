@@ -65,7 +65,8 @@ package Relay with SPARK_Mode => On is
    ---------------
 
    Max_Inflight : constant := 16;    --  messages assembled concurrently
-   Dedup_Depth  : constant := 64;    --  recently delivered (stream, seq) kept
+   Max_Streams  : constant := 64;    --  streams tracked for replay defence
+   Replay_Win   : constant := 1024;  --  anti-replay window, in messages
 
    type Collector is private;
 
@@ -74,8 +75,14 @@ package Relay with SPARK_Mode => On is
    --  Offer one received diode packet (its first Len bytes).  If it completes a
    --  message, Produced is True and the reconstructed NetworkMessage is the
    --  first Out_Len bytes of Out_Msg.  Otherwise Produced is False (fragment
-   --  stored, duplicate dropped, or packet malformed).  Total and safe on any
-   --  input -- a hostile packet cannot break it.
+   --  stored, duplicate/replay dropped, or packet malformed).  Total and safe on
+   --  any input -- a hostile or replayed packet cannot break it.
+   --
+   --  Replay defence: a per-stream sliding window (RFC 6479 style) records which
+   --  msg_seqs have been DELIVERED.  A packet whose seq is already delivered, or
+   --  is older than the window trailing edge, is dropped -- so a recorded diode
+   --  packet cannot be replayed to re-publish a stale NetworkMessage, while
+   --  reordering within the window is still tolerated.
    procedure Offer
      (C        : in out Collector;
       Buf      : Diode_Wire.Packet;
@@ -105,18 +112,23 @@ private
 
    type Entry_Array is array (1 .. Max_Inflight) of Assembly;
 
-   type Dedup_Key is record
-      Stream_Id : U64 := 0;
-      Msg_Seq   : U32 := 0;
-      Set       : Boolean := False;
+   --  Per-stream anti-replay window.  Bits (seq mod Replay_Win) records whether
+   --  msg_seq `seq` has been delivered, for seq in (Hw - Replay_Win, Hw].
+   type Win_Bits is array (0 .. Replay_Win - 1) of Boolean;
+   type Stream_Track is record
+      Used    : Boolean := False;
+      Id      : U64 := 0;
+      Have_Hw : Boolean := False;          --  any message delivered yet?
+      Hw      : U32 := 0;                  --  highest delivered seq
+      Bits    : Win_Bits := (others => False);
+      Age     : U64 := 0;                  --  for LRU eviction
    end record;
-   type Dedup_Ring is array (1 .. Dedup_Depth) of Dedup_Key;
+   type Track_Array is array (1 .. Max_Streams) of Stream_Track;
 
    type Collector is record
-      Entries   : Entry_Array;
-      Ded       : Dedup_Ring;
-      Ded_Head  : Positive range 1 .. Dedup_Depth := 1;
-      Clock     : U64 := 0;                --  monotonic tick for Age
+      Entries : Entry_Array;
+      Tracks  : Track_Array;
+      Clock   : U64 := 0;                  --  monotonic tick for Age
    end record;
 
 end Relay;

@@ -103,37 +103,86 @@ package body Relay with SPARK_Mode => On is
 
    procedure Init (C : out Collector) is
    begin
-      C := (Entries  => (others =>
+      C := (Entries => (others =>
                           (Used => False, Stream_Id => 0, Msg_Seq => 0,
                            K => 0, M => 0, Frag_Len => 0, Msg_Len => 0,
                            Count => 0, Age => 0,
                            Present => (others => False),
                            Frags => (others => (others => 0)))),
-            Ded      => (others => (Stream_Id => 0, Msg_Seq => 0, Set => False)),
-            Ded_Head => 1,
-            Clock    => 0);
+            Tracks  => (others =>
+                          (Used => False, Id => 0, Have_Hw => False, Hw => 0,
+                           Bits => (others => False), Age => 0)),
+            Clock   => 0);
    end Init;
 
-   --  Membership test against the dedup ring.
-   function Seen (C : Collector; S : U64; Q : U32) return Boolean is
+   subtype Track_Range is Positive range 1 .. Max_Streams;
+   subtype Slot_Range  is Positive range 1 .. Max_Inflight;
+
+   --  The stream track for S: the existing one, a free one, or the oldest to
+   --  evict.  Always a valid index in 1 .. Max_Streams.
+   function Pick_Track (C : Collector; S : U64) return Track_Range is
+      Free   : Natural range 0 .. Max_Streams := 0;
+      Oldest : Track_Range := 1;
    begin
-      for I in 1 .. Dedup_Depth loop
-         if C.Ded (I).Set and then C.Ded (I).Stream_Id = S
-           and then C.Ded (I).Msg_Seq = Q
-         then
-            return True;
+      for I in 1 .. Max_Streams loop
+         if C.Tracks (I).Used and then C.Tracks (I).Id = S then
+            return I;
+         end if;
+         if not C.Tracks (I).Used and then Free = 0 then
+            Free := I;
+         end if;
+         if C.Tracks (I).Age < C.Tracks (Oldest).Age then
+            Oldest := I;
          end if;
       end loop;
-      return False;
-   end Seen;
+      return (if Free /= 0 then Free else Oldest);
+   end Pick_Track;
 
-   procedure Remember (C : in out Collector; S : U64; Q : U32) is
+   --  Has msg_seq Q of this track already been delivered?  True also for a seq
+   --  older than the window trailing edge (assumed long delivered) -- either
+   --  way the packet is a replay/duplicate and must be dropped.
+   function Delivered (T : Stream_Track; Q : U32) return Boolean is
    begin
-      C.Ded (C.Ded_Head) := (Stream_Id => S, Msg_Seq => Q, Set => True);
-      C.Ded_Head := (if C.Ded_Head >= Dedup_Depth then 1 else C.Ded_Head + 1);
-   end Remember;
+      if not T.Have_Hw then
+         return False;                     --  nothing delivered on this stream
+      elsif Q > T.Hw then
+         return False;                     --  ahead of the window: new
+      elsif T.Hw - Q >= U32 (Replay_Win) then
+         return True;                      --  behind the window: ancient
+      else
+         return T.Bits (Natural (Q mod U32 (Replay_Win)));
+      end if;
+   end Delivered;
 
-   subtype Slot_Range is Positive range 1 .. Max_Inflight;
+   --  Record that msg_seq Q of track E has been delivered, sliding the window
+   --  forward if Q advances the high-water mark.
+   procedure Mark_Delivered (C : in out Collector; E : Track_Range; Q : U32) is
+      T : Stream_Track renames C.Tracks (E);
+   begin
+      if not T.Have_Hw then
+         T.Have_Hw := True;
+         T.Hw := Q;
+         T.Bits := (others => False);
+         T.Bits (Natural (Q mod U32 (Replay_Win))) := True;
+      elsif Q > T.Hw then
+         --  Slide forward: clear the bits of the seqs newly entering the window
+         --  (old Hw+1 .. Q), capped at a full window, then set Q's bit.
+         declare
+            Gap : constant U32 :=
+              (if Q - T.Hw >= U32 (Replay_Win) then U32 (Replay_Win)
+               else Q - T.Hw);
+         begin
+            for I in 1 .. Natural (Gap) loop
+               pragma Loop_Invariant (I <= Replay_Win);
+               T.Bits (Natural ((T.Hw + U32 (I)) mod U32 (Replay_Win))) := False;
+            end loop;
+         end;
+         T.Hw := Q;
+         T.Bits (Natural (Q mod U32 (Replay_Win))) := True;
+      elsif T.Hw - Q < U32 (Replay_Win) then
+         T.Bits (Natural (Q mod U32 (Replay_Win))) := True;   --  in-window
+      end if;
+   end Mark_Delivered;
 
    --  Find the entry for (S,Q), or a free one, or the oldest to evict.  Always
    --  returns a valid index in 1 .. Max_Inflight.
@@ -184,9 +233,21 @@ package body Relay with SPARK_Mode => On is
       if H.Msg_Len = 0 or else H.Msg_Len > U32 (Max_Msg_Len) then
          return;                          --  outside the RS regime
       end if;
-      if Seen (C, H.Stream_Id, H.Msg_Seq) then
-         return;                          --  already delivered: drop late copy
-      end if;
+      --  Anti-replay: drop a packet whose message was already delivered (a late
+      --  redundant copy, or a recorded packet replayed by a low-side attacker).
+      declare
+         TIx : constant Track_Range := Pick_Track (C, H.Stream_Id);
+      begin
+         --  Refresh the track's identity/age so an active stream is not evicted.
+         if not C.Tracks (TIx).Used or else C.Tracks (TIx).Id /= H.Stream_Id then
+            C.Tracks (TIx) := (Used => True, Id => H.Stream_Id,
+                               Have_Hw => False, Hw => 0,
+                               Bits => (others => False), Age => C.Clock);
+         end if;
+         if Delivered (C.Tracks (TIx), H.Msg_Seq) then
+            return;                        --  duplicate or replay: drop
+         end if;
+      end;
 
       declare
          E : constant Slot_Range := Pick (C, H.Stream_Id, H.Msg_Seq);
@@ -263,7 +324,23 @@ package body Relay with SPARK_Mode => On is
                   end loop;
                   Out_Len  := (if ELn <= Max_Msg_Len then ELn else 0);
                   Produced := Out_Len > 0;
-                  Remember (C, H.Stream_Id, H.Msg_Seq);
+                  --  Record the delivery in the stream's anti-replay window and
+                  --  free the assembly slot.
+                  declare
+                     TIx : constant Track_Range :=
+                       Pick_Track (C, H.Stream_Id);
+                  begin
+                     if not C.Tracks (TIx).Used
+                       or else C.Tracks (TIx).Id /= H.Stream_Id
+                     then
+                        C.Tracks (TIx) := (Used => True, Id => H.Stream_Id,
+                                           Have_Hw => False, Hw => 0,
+                                           Bits => (others => False),
+                                           Age => C.Clock);
+                     end if;
+                     Mark_Delivered (C, TIx, H.Msg_Seq);
+                     C.Tracks (TIx).Age := C.Clock;
+                  end;
                   C.Entries (E).Used := False;    --  slot freed
                end if;
             end;

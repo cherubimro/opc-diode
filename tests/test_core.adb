@@ -342,25 +342,81 @@ begin
       Trial (777,   3, 3, 8);     --  K=1, three copies, drop all but one
 
       --  Dedup: two fully-redundant deliveries of the same message must yield
-      --  exactly one recovery.
+      --  exactly one recovery.  (Collector is ~megabytes -> heap, not stack.)
       declare
+         type Coll_Ptr is access Relay.Collector;
          Src  : Relay.Msg_Bytes := (others => 0);
          Pkts : Relay.Packet_Array; Lens : Relay.Length_Array;
          N    : Relay.Out_Count;   Ok : Boolean;
-         Coll : Relay.Collector;   Deliveries : Natural := 0;
+         Coll : constant Coll_Ptr := new Relay.Collector;
+         Deliveries : Natural := 0;
       begin
          for I in 1 .. 2000 loop Src (I) := Rand; end loop;
          Relay.Protect (Src, 2000, 16#1234#, 42, 3, Pkts, Lens, N, Ok);
-         Relay.Init (Coll);
+         Relay.Init (Coll.all);
          for Pass in 1 .. 2 loop
             for I in 1 .. N loop
                declare P : Boolean; O : Relay.Msg_Bytes; L : Natural; begin
-                  Relay.Offer (Coll, Pkts (I), Lens (I), P, O, L);
+                  Relay.Offer (Coll.all, Pkts (I), Lens (I), P, O, L);
                   if P then Deliveries := Deliveries + 1; end if;
                end;
             end loop;
          end loop;
          Check (Deliveries = 1, "dedup: one delivery despite all packets twice");
+      end;
+
+      --  Replay defence: deliver several messages of a stream, then replay an
+      --  OLD message's packets in full -- it must NOT be re-delivered.  And a
+      --  genuinely new later message must still get through.
+      declare
+         type Coll_Ptr is access Relay.Collector;
+         Src  : Relay.Msg_Bytes := (others => 0);
+         Coll : constant Coll_Ptr := new Relay.Collector;
+         Old_Pkts : Relay.Packet_Array; Old_Lens : Relay.Length_Array;
+         Np : Relay.Out_Count; Ok : Boolean;
+         Replays : Natural := 0; News : Natural := 0;
+
+         procedure Feed (Seq : U32; Save : Boolean) is
+            Pk : Relay.Packet_Array; Ln : Relay.Length_Array;
+            Nn : Relay.Out_Count; O2 : Boolean;
+         begin
+            for I in 1 .. 1500 loop Src (I) := Rand; end loop;
+            Relay.Protect (Src, 1500, 16#ABCD#, Seq, 2, Pk, Ln, Nn, O2);
+            if Save then Old_Pkts := Pk; Old_Lens := Ln; Np := Nn; end if;
+            for I in 1 .. Nn loop
+               declare P : Boolean; O : Relay.Msg_Bytes; L : Natural; begin
+                  Relay.Offer (Coll.all, Pk (I), Ln (I), P, O, L);
+               end;
+            end loop;
+         end Feed;
+      begin
+         Relay.Init (Coll.all);
+         Feed (100, True);           --  message #100, remember its packets
+         for S in U32 range 101 .. 130 loop Feed (S, False); end loop;
+
+         --  Replay message #100 in full: every packet must be dropped.
+         for I in 1 .. Np loop
+            declare P : Boolean; O : Relay.Msg_Bytes; L : Natural; begin
+               Relay.Offer (Coll.all, Old_Pkts (I), Old_Lens (I), P, O, L);
+               if P then Replays := Replays + 1; end if;
+            end;
+         end loop;
+         Check (Replays = 0, "replay of an old message is rejected");
+
+         --  A brand-new later message still gets through.
+         declare Pk : Relay.Packet_Array; Ln : Relay.Length_Array;
+                 Nn : Relay.Out_Count; O2 : Boolean; begin
+            for I in 1 .. 1500 loop Src (I) := Rand; end loop;
+            Relay.Protect (Src, 1500, 16#ABCD#, 200, 2, Pk, Ln, Nn, O2);
+            for I in 1 .. Nn loop
+               declare P : Boolean; O : Relay.Msg_Bytes; L : Natural; begin
+                  Relay.Offer (Coll.all, Pk (I), Ln (I), P, O, L);
+                  if P then News := News + 1; end if;
+               end;
+            end loop;
+         end;
+         Check (News = 1, "a new message after replays still delivered");
+         pragma Unreferenced (Ok, Np);
       end;
    end;
 
