@@ -1,0 +1,30 @@
+[2026/07/14 21:00:39.508] Common LOG START
+[2026/07/14 21:00:39.508] ClientSer LOG START
+[2026/07/14 21:00:39.508] PubSub LOG START
+[2026/07/14 21:00:39.508] Common LOG LEVEL SET TO 'INFO'
+[2026/07/14 21:00:39.508] ClientSer LOG LEVEL SET TO 'INFO'
+[2026/07/14 21:00:39.508] PubSub LOG LEVEL SET TO 'INFO'
+[2026/07/14 21:00:39.508] Common LOG LEVEL SET TO 'INFO'
+[2026/07/14 21:00:39.508] ClientSer LOG LEVEL SET TO 'INFO'
+[2026/07/14 21:00:39.508] PubSub LOG LEVEL SET TO 'INFO'
+[2026/07/14 21:00:39.508] ClientSer Common library DATE='2026-07-14' VERSION='1.7.3*' SIGNATURE='863e67bd0e31523352138c713d1e1b414e7bbb6f' DOCKER=''
+[2026/07/14 21:00:39.508] ClientSer Client/Server toolkit library DATE='2026-07-14' VERSION='1.7.3*' SIGNATURE='863e67bd0e31523352138c713d1e1b414e7bbb6f' DOCKER=''
+[2026/07/14 21:00:39.508] Common LOG LEVEL SET TO 'INFO'
+[2026/07/14 21:00:39.508] ClientSer LOG LEVEL SET TO 'INFO'
+[2026/07/14 21:00:39.508] PubSub LOG LEVEL SET TO 'INFO'
+[2026/07/14 21:00:39.628] ClientSer (Warning) No authentication manager configured: fallback to default permissive authentication manager
+[2026/07/14 21:00:39.628] ClientSer (Warning) No authorization manager configured: fallback to default permissive authorization manager
+[2026/07/14 21:00:46.512] ClientSer Connection accepted on [::]:4840 from [127.0.0.1]:33350 with socket socketIdx=2
+[2026/07/14 21:00:46.512] ClientSer (Warning) Endpoint URL is not identical to requested URL : opc.tcp://localhost:4840 instead of opc.tcp://127.0.0.1:4840
+[2026/07/14 21:00:46.512] ClientSer Closed connection on [127.0.0.1]:33350 with socket socketIdx=2
+[2026/07/14 21:00:46.512] ClientSer Connection accepted on [::]:4840 from [127.0.0.1]:33354 with socket socketIdx=2
+[2026/07/14 21:00:46.513] ClientSer Role i=15668 granted to session!
+[2026/07/14 21:00:46.513] ClientSer (Warning) No DefaultRolePermissions defined for NS=1:urn:S2OPC:localhost. Therefore this namespace does not handle permissions. RolePermissions attribute of nodes in this namespace will be ignored.
+[2026/07/14 21:00:46.513] ClientSer (Warning) No DefaultRolePermissions defined for NS=2:https://www.systerel.fr/S2OPC/demo/data/origin. Therefore this namespace does not handle permissions. RolePermissions attribute of nodes in this namespace will be ignored.
+[2026/07/14 21:00:46.513] ClientSer Closed connection on [127.0.0.1]:33354 with socket socketIdx=2
+[2026/07/14 21:00:48.119] ClientSer Connection accepted on [::]:4840 from [127.0.0.1]:33356 with socket socketIdx=2
+[2026/07/14 21:00:48.120] ClientSer (Warning) Endpoint URL is not identical to requested URL : opc.tcp://localhost:4840 instead of opc.tcp://127.0.0.1:4840
+[2026/07/14 21:00:48.120] ClientSer Closed connection on [127.0.0.1]:33356 with socket socketIdx=2
+[2026/07/14 21:00:48.120] ClientSer Connection accepted on [::]:4840 from [127.0.0.1]:33358 with socket socketIdx=2
+[2026/07/14 21:00:48.121] ClientSer Role i=15668 granted to session!
+[2026/07/14 21:00:48.121] ClientSer Closed connection on [127.0.0.1]:33358 with socket socketIdx=2

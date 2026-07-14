@@ -72,7 +72,7 @@ Toolchain: **GNAT 14.2.0 + gprbuild + gnatprove** (SPARK). `tools/env.sh` puts t
 
 ```sh
 ./tools/build.sh          # -> bin/{test_core, od_sender, od_receiver, od_probe}
-./tools/prove.sh          # gnatprove over the core (318 checks, 0 unproved)
+./tools/prove.sh          # gnatprove over the core (350 checks, 0 unproved)
 ./tools/check.sh          # build + proof + core sanity + end-to-end loopback
 ./tools/loopback-test.sh  # od_sender <-UDP-> od_receiver, byte-identical
 ```
@@ -156,3 +156,14 @@ SPARKNaCl (BSD) and S2OPC / open62541 (Apache-2.0 / MPL-2.0, file-level copyleft
 AGPL-compatible; their notices are retained in their vendored trees, and `tools/*-build.sh` reproduce
 them from source. The S2OPC and open62541 trees are gitignored — this repository distributes no
 third-party binaries.
+
+---
+
+Made 🄯 libre (free as in freedom) with ❤️ at Politehnica University of Timișoara — quite possibly the
+first formally-verified (machine-checked proof of no run-time errors) **OPC UA data-diode relay** for
+one-way mirroring of **OPC UA / OPC UA PubSub** process data across an air gap. Built specifically for
+industrial control and SCADA — power grids, water treatment plants, oil & gas pipelines, railways, and
+telecommunications networks — **not** a general-purpose file mover.
+
+Because we care — and because critical-infrastructure protection should not depend on proprietary /
+closed-source systems, and should be made FREE.
