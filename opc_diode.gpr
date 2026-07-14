@@ -59,7 +59,7 @@ project Opc_Diode is
    for Object_Dir  use "obj";
    for Exec_Dir    use "bin";
    for Main        use ("test_core.adb", "od_sender.adb", "od_receiver.adb",
-                        "od_probe.adb", "od_adapter.adb");
+                        "od_probe.adb", "od_adapter.adb", "od_shadow.adb");
 
    package Compiler is
       --  Assertions off at run time: the SPARK contracts are discharged
