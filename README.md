@@ -4,11 +4,10 @@
 [opcua-data-diode](https://github.com/cherubimro/opcua-data-diode), aimed at *formal proof* of the
 reconstruction path rather than parity with the Python original.
 
-> Status: **Phase 3 proven core complete.** GF(2⁸), Reed-Solomon, the UADP header parser, the diode
-> framing, and the **relay logic** (protect + erasure-recover + dedup) are all proved free of run-time
-> errors by `gnatprove`: **316 checks, 0 unproved, 0 justified**, with an end-to-end round-trip test
-> (NetworkMessage → protect → drop up to M packets → recover byte-identical, plus dedup). The remaining
-> piece is the trusted UDP shell (sockets + scheduler).
+> Status: **Phase 3 complete — a working, proven relay.** The proven core (GF(2⁸), Reed-Solomon, UADP
+> header parse, diode framing, protect + erasure-recover + dedup) is AoRTE-clean: **318 checks, 0
+> unproved, 0 justified**. On top sits a small trusted UDP shell (`od_sender` / `od_receiver`), and the
+> two move real NetworkMessages end-to-end over UDP byte-identical (`tools/loopback-test.sh`: 40/40).
 
 ## Why this design, and how it differs from the Python original
 
@@ -61,19 +60,34 @@ Reed-Solomon owns the middle rung and is what Phase 0+1 delivers.
 Toolchain: **GNAT 14.2.0 + gprbuild + gnatprove** (SPARK). `tools/env.sh` puts them on `PATH`.
 
 ```sh
-./tools/build.sh     # -> bin/test_core
-./tools/prove.sh     # gnatprove over the core (112 checks, 0 unproved)
-./tools/check.sh     # build + proof + field axioms + RS erasure round-trip
+./tools/build.sh          # -> bin/{test_core, od_sender, od_receiver, od_probe}
+./tools/prove.sh          # gnatprove over the core (318 checks, 0 unproved)
+./tools/check.sh          # build + proof + core sanity + end-to-end loopback
+./tools/loopback-test.sh  # od_sender <-UDP-> od_receiver, byte-identical
 ```
+
+## Running the relay
+
+```sh
+# low side: recover diode packets on 9702, re-emit NetworkMessages to subscribers on 127.0.0.1:9703
+./bin/od_receiver 9702 127.0.0.1 9703
+
+# high side: take the publisher's NetworkMessages on 9701, protect with 3 parity, blast to the diode
+./bin/od_sender 9701 <receiver_ip> 9702 --parity 3 --pace-us 200
+```
+
+The publisher points its PubSub output at the sender's `9701`; subscribers listen on the receiver's
+`9703`. One-way throughout: nothing flows back.
 
 ## Roadmap
 
 - **Phase 0+1 — proven core** ✅ GF(2⁸) + Reed-Solomon, AoRTE-proved, round-trip tested.
 - **Phase 2 — UADP header parse** ✅ proven parse of the NetworkMessage/GroupHeader/PayloadHeader;
   `SequenceNumber` + routing-id extraction; opaque-payload passthrough; safe on truncated/hostile input.
-- **Phase 3 — the relay** ✅ *proven core*: `diode_wire` framing + `relay` (protect + erasure-recover +
-  dedup), round-trip tested. **Remaining**: the trusted UDP shell (sockets, main loop, interleaving
-  scheduler); optionally the DPDK bypass + LT transport from gnat-lt-pro.
+- **Phase 3 — the relay** ✅ proven core (`diode_wire` + `relay`) **plus** the trusted UDP shell
+  (`od_sender` / `od_receiver` / `od_stream`); works end-to-end byte-identical. *Refinements left*: a
+  cross-message interleaving scheduler (today: simple pacing), and optionally the DPDK bypass + LT
+  transport from gnat-lt-pro for the bulk rung.
 - **Phase 4 — encryption** AEAD from [SPARKNaCl](https://github.com/rod-chapman/SPARKNaCl) in the
   proven core.
 - **Phase 5 — assurance argument** the proven/trusted boundary, as in gnat-lt-pro's `ASSURANCE.md`.

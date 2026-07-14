@@ -13,3 +13,4 @@ if grep -qE '(medium|high|low):' obj/gnatprove/gnatprove.out 2>/dev/null; then
 fi
 echo "ok: all checks proved"
 echo "=== core sanity ==="; ./bin/test_core
+echo "=== end-to-end loopback (shell over UDP) ==="; ./tools/loopback-test.sh >/dev/null 2>&1 && echo ok || { echo FAIL; exit 1; }
