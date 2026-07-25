@@ -9,3 +9,13 @@ deps/open62541/
 # S2OPC writes runtime trace logs to the CWD; never commit them
 Trace_*.log
 /tmp/od-memif-*
+
+# Diode tutorial: PDFs are committed so they can be read without a LaTeX
+# toolchain; rebuild with ./tools/doc.sh. The intermediates are not.
+docs/tutorial/*.aux
+docs/tutorial/*.log
+docs/tutorial/*.out
+docs/tutorial/*.toc
+docs/tutorial/*.fls
+docs/tutorial/*.fdb_latexmk
+docs/tutorial/*.synctex.gz
